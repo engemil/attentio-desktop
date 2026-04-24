@@ -1,0 +1,24 @@
+services:
+  attentio_desktop_dev_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: /bin/bash
+    tty: true
+    privileged: true
+    network_mode: "host" # Useful for some desktop network features
+    environment:
+      - DISPLAY=$DISPLAY
+      - WAYLAND_DISPLAY=$WAYLAND_DISPLAY
+      - XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR
+      - NO_AT_BRIDGE=1
+      # Force software GL so Flutter Linux apps work when the host X server
+      # uses an NVIDIA GPU inaccessible from inside the container.
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - GDK_RENDERING=image
+    volumes:
+      - ../:/workspace:cached
+      - /dev:/dev
+      # X11/Wayland sharing for desktop GUI app
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - $HOME/.Xauthority:/home/engemil/.Xauthority:ro

@@ -1,0 +1,19 @@
+{
+    "name": "attentio_desktop_development",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "attentio_desktop_dev_service",
+    "shutdownAction": "none",
+    "workspaceFolder": "/workspace",
+    "remoteUser": "engemil",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "dart-code.flutter",
+                "dart-code.dart-code",
+                "tamasfe.even-better-toml"
+            ],
+            "settings": {}
+        }
+    }
+}
