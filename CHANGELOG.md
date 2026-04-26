@@ -101,6 +101,14 @@ Changed
 
 Fixed
 
+- **Theme segmented button label wrapping** — selecting System / Light /
+  Dark in Settings → Appearance caused the active segment's label to wrap
+  onto two lines. The Material 3 `SegmentedButton` was injecting a check
+  icon into the selected segment, widening it inside the wide-layout
+  `Flexible` wrapper and squeezing the label. Fixed in
+  `lib/features/settings/settings_page.dart` by setting
+  `showSelectedIcon: false` and `softWrap: false` on each segment label.
+
 - **Spurious `PortBusy` on writes** — saving `device_name` (or any other
   setting) while the detail page was actively polling status produced a
   `port /dev/ttyACM* is busy` error. Root cause was the GUI racing itself:

@@ -244,18 +244,19 @@ class _ThemeModeTile extends StatelessWidget {
       title: 'Theme',
       subtitle: 'Choose between light, dark, or follow system.',
       control: SegmentedButton<ThemeMode>(
+        showSelectedIcon: false,
         segments: const [
           ButtonSegment(
             value: ThemeMode.system,
-            label: Text('System'),
+            label: Text('System', softWrap: false),
           ),
           ButtonSegment(
             value: ThemeMode.light,
-            label: Text('Light'),
+            label: Text('Light', softWrap: false),
           ),
           ButtonSegment(
             value: ThemeMode.dark,
-            label: Text('Dark'),
+            label: Text('Dark', softWrap: false),
           ),
         ],
         selected: {current},
