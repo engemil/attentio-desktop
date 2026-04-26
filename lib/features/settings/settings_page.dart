@@ -5,6 +5,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:attentio_desktop/features/settings/settings_provider.dart';
 
+/// Breakpoint (content-area width) at which wide trailing controls switch from
+/// an inline trailing position to a stacked layout below the label.
+const double _kSettingsResponsiveBreakpoint = 580;
+
+/// Maximum content width for the settings page; prevents overly stretched
+/// rows on wide windows.
+const double _kSettingsMaxContentWidth = 720;
+
 /// Full settings page — Appearance, Application behaviour, and About.
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -14,60 +22,71 @@ class SettingsPage extends ConsumerWidget {
     final settings = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        _Section(
-          title: 'Appearance',
-          children: [
-            _ThemeModeTile(
-              current: settings.themeMode,
-              onChanged: notifier.setThemeMode,
-            ),
-            const Divider(height: 1),
-            _AccentColorTile(
-              current: settings.accentColor,
-              onChanged: notifier.setAccentColor,
-            ),
-            const Divider(height: 1),
-            _LanguageTile(
-              current: settings.language,
-              onChanged: notifier.setLanguage,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Section(
-          title: 'Application',
-          children: [
-            SwitchListTile(
-              title: const Text('Minimize to system tray on close'),
-              subtitle: const Text(
-                'Closing the window hides it to the system tray instead of '
-                'quitting the application.',
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(maxWidth: _kSettingsMaxContentWidth),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _Section(
+                title: 'Appearance',
+                children: [
+                  _ThemeModeTile(
+                    current: settings.themeMode,
+                    onChanged: notifier.setThemeMode,
+                  ),
+                  const Divider(height: 1),
+                  _AccentColorTile(
+                    current: settings.accentColor,
+                    onChanged: notifier.setAccentColor,
+                  ),
+                  const Divider(height: 1),
+                  _LanguageTile(
+                    current: settings.language,
+                    onChanged: notifier.setLanguage,
+                  ),
+                ],
               ),
-              secondary: const Icon(Icons.minimize),
-              value: settings.minimizeToTrayOnClose,
-              onChanged: notifier.setMinimizeToTrayOnClose,
-            ),
-            const Divider(height: 1),
-            SwitchListTile(
-              title: const Text('Autostart on login'),
-              subtitle: const Text(
-                'Launch Attentio Desktop automatically when you log in.',
+              const SizedBox(height: 24),
+              _Section(
+                title: 'Application',
+                children: [
+                  SwitchListTile(
+                    title: const Text('Minimize to system tray on close'),
+                    subtitle: const Text(
+                      'Closing the window hides it to the system tray '
+                      'instead of quitting the application.',
+                    ),
+                    secondary: const Icon(Icons.minimize),
+                    value: settings.minimizeToTrayOnClose,
+                    onChanged: notifier.setMinimizeToTrayOnClose,
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    title: const Text('Autostart on login'),
+                    subtitle: const Text(
+                      'Launch Attentio Desktop automatically when you log '
+                      'in.',
+                    ),
+                    secondary: const Icon(Icons.power_settings_new),
+                    value: settings.autostartOnLogin,
+                    onChanged: notifier.setAutostartOnLogin,
+                  ),
+                ],
               ),
-              secondary: const Icon(Icons.power_settings_new),
-              value: settings.autostartOnLogin,
-              onChanged: notifier.setAutostartOnLogin,
-            ),
-          ],
+              const SizedBox(height: 24),
+              _Section(
+                title: 'About',
+                children: const [_AboutTile()],
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        _Section(
-          title: 'About',
-          children: const [_AboutTile()],
-        ),
-      ],
+      ),
     );
   }
 }
@@ -101,6 +120,117 @@ class _Section extends StatelessWidget {
   }
 }
 
+/// A settings row that renders its [control] to the right of the label on
+/// wide windows, but stacks the control below the label/subtitle on narrow
+/// windows. Works around the tight width constraint of [ListTile.trailing].
+class _ResponsiveSettingTile extends StatelessWidget {
+  const _ResponsiveSettingTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.control,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget control;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide =
+            constraints.maxWidth >= _kSettingsResponsiveBreakpoint;
+        if (wide) {
+          return Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, color: Theme.of(context).iconTheme.color),
+                const SizedBox(width: 24),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: Theme.of(context).textTheme.bodyLarge),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: control,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        // Narrow: stack the control under the label.
+        return Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, color: Theme.of(context).iconTheme.color),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: Theme.of(context).textTheme.bodyLarge),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: control,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _ThemeModeTile extends StatelessWidget {
   const _ThemeModeTile({required this.current, required this.onChanged});
 
@@ -109,26 +239,23 @@ class _ThemeModeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.brightness_6),
-      title: const Text('Theme'),
-      subtitle: const Text('Choose between light, dark, or follow system.'),
-      trailing: SegmentedButton<ThemeMode>(
+    return _ResponsiveSettingTile(
+      icon: Icons.brightness_6,
+      title: 'Theme',
+      subtitle: 'Choose between light, dark, or follow system.',
+      control: SegmentedButton<ThemeMode>(
         segments: const [
           ButtonSegment(
             value: ThemeMode.system,
             label: Text('System'),
-            icon: Icon(Icons.brightness_auto),
           ),
           ButtonSegment(
             value: ThemeMode.light,
             label: Text('Light'),
-            icon: Icon(Icons.light_mode),
           ),
           ButtonSegment(
             value: ThemeMode.dark,
             label: Text('Dark'),
-            icon: Icon(Icons.dark_mode),
           ),
         ],
         selected: {current},
@@ -158,26 +285,23 @@ class _AccentColorTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.color_lens),
-      title: const Text('Accent colour'),
-      subtitle: const Text(
-          'Seed colour used to derive the application colour scheme.'),
-      trailing: SizedBox(
-        width: 240,
-        child: Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          alignment: WrapAlignment.end,
-          children: [
-            for (final c in _palette)
-              _ColorDot(
-                color: c,
-                selected: c.value == current.value,
-                onTap: () => onChanged(c),
-              ),
-          ],
-        ),
+    return _ResponsiveSettingTile(
+      icon: Icons.color_lens,
+      title: 'Accent colour',
+      subtitle:
+          'Seed colour used to derive the application colour scheme.',
+      control: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final c in _palette)
+            _ColorDot(
+              color: c,
+              // ignore: deprecated_member_use
+              selected: c.value == current.value,
+              onTap: () => onChanged(c),
+            ),
+        ],
       ),
     );
   }
@@ -225,11 +349,11 @@ class _LanguageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.language),
-      title: const Text('Language'),
-      subtitle: const Text('Only English is available right now.'),
-      trailing: DropdownButton<AppLanguage>(
+    return _ResponsiveSettingTile(
+      icon: Icons.language,
+      title: 'Language',
+      subtitle: 'Only English is available right now.',
+      control: DropdownButton<AppLanguage>(
         value: current,
         onChanged: (v) => v == null ? null : onChanged(v),
         items: const [

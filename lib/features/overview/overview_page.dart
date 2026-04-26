@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:attentio_desktop/features/devices/device_display.dart';
 import 'package:attentio_desktop/features/devices/devices_providers.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
+import 'package:attentio_desktop/utils/responsive.dart';
 
 /// Top-level status summary across all connected AL-1 devices.
 ///
@@ -51,29 +53,51 @@ class _OverviewBody extends ConsumerWidget {
               ),
         ),
         const SizedBox(height: 20),
-        Row(
-          children: [
-            _SummaryCard(
-              icon: Icons.devices_other,
-              label: 'Connected',
-              value: devices.length.toString(),
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            _SummaryCard(
-              icon: Icons.check_circle_outline,
-              label: 'Normal',
-              value: normal.toString(),
-              color: Colors.green,
-            ),
-            const SizedBox(width: 12),
-            _SummaryCard(
-              icon: Icons.memory,
-              label: 'Bootloader',
-              value: bootloader.toString(),
-              color: Colors.orange,
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cards = [
+              _SummaryCard(
+                icon: Icons.devices_other,
+                label: 'Connected',
+                value: devices.length.toString(),
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              _SummaryCard(
+                icon: Icons.check_circle_outline,
+                label: 'Normal',
+                value: normal.toString(),
+                color: Colors.green,
+              ),
+              _SummaryCard(
+                icon: Icons.memory,
+                label: 'Bootloader',
+                value: bootloader.toString(),
+                color: Colors.orange,
+              ),
+            ];
+            // Below ~520 px the three cards crowd; stack them with Wrap so
+            // each card takes the full row.
+            if (constraints.maxWidth < 520) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < cards.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    cards[i],
+                  ],
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: cards[0]),
+                const SizedBox(width: 12),
+                Expanded(child: cards[1]),
+                const SizedBox(width: 12),
+                Expanded(child: cards[2]),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 24),
         Text(
@@ -115,15 +139,15 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(icon, size: 32, color: color),
-              const SizedBox(width: 12),
-              Column(
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, size: 32, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label,
@@ -134,8 +158,8 @@ class _SummaryCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -158,8 +182,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
         ? ref.watch(deviceStatusStreamProvider(device.serial))
         : const AsyncValue<DeviceStatus?>.data(null);
 
-    final name = device.name?.isNotEmpty == true ? device.name! : 'AL-1';
-    final subtitle = 'Serial: ${device.serial}';
+    final name = deviceDisplayName(device);
 
     return Card(
       child: Padding(
@@ -175,17 +198,31 @@ class _OverviewDeviceTile extends ConsumerWidget {
                   Text(
                     name,
                     style: Theme.of(context).textTheme.titleMedium,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  if (device.deviceType != null)
+                    Text(
+                      device.deviceType!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   Text(
-                    subtitle,
+                    'Serial: ${device.serial}',
                     style: Theme.of(context).textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
             _ModeBadge(mode: device.mode),
-            const SizedBox(width: 12),
-            if (isNormal) _StatusSummary(statusAsync: statusAsync),
+            if (isNormal && !isCompactWidth(context)) ...[
+              const SizedBox(width: 12),
+              _StatusSummary(statusAsync: statusAsync),
+            ],
           ],
         ),
       ),

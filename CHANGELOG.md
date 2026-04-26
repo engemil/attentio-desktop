@@ -14,6 +14,107 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-04-26)
+
+Added
+
+- **Persistent per-device USB client cache** — `rust/src/api/device_api.rs` now
+  keeps one long-lived `ApClient` per device serial behind a
+  `tokio::sync::Mutex` (cached in a `OnceLock<HashMap<String, …>>`). Every FRB
+  call funnels through a `with_client(serial, op)` helper that lazily opens
+  the port on first use, serialises subsequent calls per device, and on a
+  transport error (PortBusy / Serial / Io / Timeout / DeviceNotFound) evicts
+  the bad client and retries once with a fresh open. Eliminates the self-race
+  that produced spurious `PortBusy` errors when, e.g., the 2 s status poll
+  and a `device_name` save overlapped.
+
+- **Shared device display-name helper** — new
+  `lib/features/devices/device_display.dart` exporting `deviceDisplayName`,
+  used by Overview, Devices list, and Device detail. Priority order:
+  user-assigned `device_name` → USB iProduct string → literal
+  `"AttentioLight-1"`. Replaces three divergent inline fallback chains so
+  every page shows the same label for the same device.
+
+- **Adaptive sidebar / responsive layout** — new `lib/utils/responsive.dart`
+  defining `kCompactWidth = 600`, `kMediumWidth = 900`, and a `NavMode`
+  enum. `AppShell` now renders one of three layouts via a top-level
+  `LayoutBuilder`:
+    - **Drawer** (< 600 px) — hamburger in the AppBar opens a side `Drawer`
+      with the destination tiles; selecting closes the drawer.
+    - **Rail** (600–899 px, or user-collapsed at any width ≥ 900 px) —
+      icon-and-label `NavigationRail` (76 px wide).
+    - **Extended** (≥ 900 px) — full 250 px sidebar with `ListTile`s and a
+      collapse toggle in the AppBar.
+  A single `_kDestinations` list is the source of truth for all three modes.
+
+- **Two new responsive widget tests** — `test/widget_test.dart` now covers
+  drawer mode at 420 × 720 (hamburger opens drawer, selection closes it) and
+  the manual collapse cycle at 1280 × 720 (extended ⇄ rail). Total: 5 tests.
+
+Changed
+
+- **Window minimum size** lowered from `400 × 300` to `360 × 480` (phone-
+  portrait baseline) in `lib/main.dart`.
+
+- **Device label everywhere** — Overview previously fell back to the literal
+  `"AL-1"`, while Devices list and Device detail fell back to
+  `device.deviceType ?? "AttentioLight-1"`. All four call sites now use
+  `deviceDisplayName`, eliminating the `AL-1` ↔ `AttentioLight-1` flicker
+  between pages.
+
+- **Device-row layout** — across Overview, Devices list, and Device detail,
+  the device-type line is now placed *between* the display name and the
+  `Serial: …` line. Overview previously did not show device type at all.
+
+- **Refresh buttons audit** — removed the redundant refresh button on the
+  Devices page header and the AppBar refresh action on the Device detail
+  page. Both views auto-refresh (every 5 s and 2 s respectively); the
+  Settings card and Metadata card refresh icons remain (those providers do
+  not auto-refresh).
+
+- **Device detail Quick Actions** restructured:
+    - **Layout:** the `Wrap`-everything block was replaced with a
+      `LayoutBuilder` that renders three rows at content widths ≥ 360 px
+      (`Claim` / `Release`, `Power On` / `Power Off`, `Ping` alone) and
+      stacks one full-width button per row below that.
+    - **Styles:** Claim, Power On, and Ping now share `FilledButton.icon`
+      (primary fill); Release and Power Off use `OutlinedButton.icon`.
+    - **LED Off moved out of the Controls card** and into the LED Controls
+      card next to "Apply colour" (renamed from "LEDs Off" to "LED Off",
+      using `OutlinedButton.icon`). Same `LayoutBuilder` pattern for narrow
+      widths.
+
+- **Overview summary cards** (`Connected` / `Normal` / `Bootloader`) now use
+  a `LayoutBuilder`: stacked full-width column below 520 px, three-column
+  `Row` of `Expanded`s above. Removed the inner `Expanded` from
+  `_SummaryCard` so it composes correctly in either layout. The trailing
+  `_StatusSummary` per device tile is hidden at compact widths.
+
+- **Theme segmented button** — removed the per-segment icons from
+  `_ThemeModeTile` (`System` / `Light` / `Dark`) so the labels no longer
+  wrap to two lines (`Syste`/`m`) when the wide-layout `Flexible` constrains
+  the control's width.
+
+- **Existing AppShell test** pinned to a `1280 × 720` surface to keep it
+  exercising the canonical extended-sidebar layout regardless of harness
+  defaults.
+
+Fixed
+
+- **Spurious `PortBusy` on writes** — saving `device_name` (or any other
+  setting) while the detail page was actively polling status produced a
+  `port /dev/ttyACM* is busy` error. Root cause was the GUI racing itself:
+  every FRB call independently opened the port with `TIOCEXCL`, so two
+  concurrent calls in the same process collided. Fixed by the persistent
+  per-device client cache (above).
+
+- **Transient device-name flicker** (companion to the CLI cache) — the
+  display helper transparently benefits from `attentio`'s last-known-name
+  cache, so a momentary failed read no longer flips the label to a fallback
+  for one render cycle.
+
+---
+
 ## [Development] (2026-04-24)
 
 Added

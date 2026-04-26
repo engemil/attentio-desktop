@@ -17,6 +17,10 @@ Future<void> main() async {
   if (!Platform.isAndroid && !Platform.isIOS) {
     try {
       await windowManager.ensureInitialized();
+      // Enforce a minimum window size so the UI never collapses below a
+      // tested, usable footprint. 360×480 is a phone-portrait baseline:
+      // below 360 px wide the AppBar title and first card start to clip.
+      await windowManager.setMinimumSize(const Size(360, 480));
       await TrayService.instance.init();
     } catch (_) {
       // Running in a headless test environment — fall back gracefully.

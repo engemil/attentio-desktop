@@ -1,7 +1,12 @@
 use anyhow::Result;
 use attentio::device::discovery::{find_devices, DeviceMode};
-use attentio::protocol::open_client;
+use attentio::error::AttentioError;
+use attentio::protocol::{open_client, ApClient};
+use std::collections::HashMap;
+use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::Duration;
+use tokio::sync::Mutex as AsyncMutex;
+use std::sync::Arc;
 
 /// FRB-exposed mirror of `attentio::protocol::client::DeviceStatus`.
 ///
@@ -79,6 +84,128 @@ fn mode_string(m: DeviceMode) -> String {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Persistent per-device client cache
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Each connected device gets one long-lived `ApClient` wrapped in an
+// `Arc<AsyncMutex<Option<ApClient>>>`. All FRB calls for that serial acquire
+// the same async mutex, run their operation against the cached client, and
+// release. The serial port is opened once on first use and held open until
+// the device disappears or a transport error forces a reopen.
+//
+// This eliminates the self-race that produced `PortBusy` when the GUI's
+// 2 s status poll and a user-triggered write happened to overlap.
+//
+// Key design points:
+//   • The outer map uses a `std::sync::Mutex` because lookups are nearly
+//     instantaneous (HashMap insert/get) — no need for an async lock there.
+//   • The inner client uses `tokio::sync::Mutex` because operations are
+//     awaited (USB round-trips, ~ms-level).
+//   • `Option<ApClient>` lets us evict-in-place: if a transport error fires,
+//     we drop the bad client (returning the port to the OS) and the next
+//     call will reopen.
+//   • `serial = None` resolves to the first available device's serial up-
+//     front, then the rest of the call shares that key. The GUI always
+//     passes `Some(serial)` today, but this keeps the CLI-style single-
+//     device flow working too.
+
+type SharedSlot = Arc<AsyncMutex<Option<ApClient>>>;
+
+fn slot_for(serial: &str) -> SharedSlot {
+    static MAP: OnceLock<StdMutex<HashMap<String, SharedSlot>>> = OnceLock::new();
+    let map = MAP.get_or_init(|| StdMutex::new(HashMap::new()));
+    let mut guard = map.lock().expect("device-cache map poisoned");
+    guard
+        .entry(serial.to_string())
+        .or_insert_with(|| Arc::new(AsyncMutex::new(None)))
+        .clone()
+}
+
+/// Resolve `serial = None` to the serial of the first available device.
+async fn resolve_serial(serial: Option<String>) -> Result<String> {
+    if let Some(s) = serial {
+        return Ok(s);
+    }
+    let devices = tokio::time::timeout(Duration::from_secs(5), find_devices())
+        .await
+        .map_err(|_| anyhow::anyhow!("Timeout"))??;
+    let first = devices
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no device(s) found"))?;
+    Ok(first.serial)
+}
+
+/// Should we evict the cached client and reopen on the next call? Returns
+/// true for transport-level failures where the in-memory `ApClient` is
+/// likely no longer usable; returns false for protocol-level errors (the
+/// device is fine, the request just failed).
+fn is_transport_error(err: &AttentioError) -> bool {
+    matches!(
+        err,
+        AttentioError::PortBusy { .. }
+            | AttentioError::Serial(_)
+            | AttentioError::Io(_)
+            | AttentioError::Timeout { .. }
+            | AttentioError::DeviceNotFound
+            | AttentioError::DeviceSerialNotFound { .. }
+    )
+}
+
+/// Run `op` against the persistent `ApClient` for `serial`.
+///
+/// On a transport error the client is dropped and a single retry is made
+/// with a freshly opened client; on protocol errors the client is kept and
+/// the error is returned immediately.
+async fn with_client<F, T>(serial: Option<String>, op: F) -> Result<T>
+where
+    F: for<'a> AsyncFn(&'a mut ApClient) -> Result<T, AttentioError>,
+{
+    let resolved = resolve_serial(serial).await?;
+    let slot = slot_for(&resolved);
+    let mut guard = slot.lock().await;
+
+    // Ensure we have an open client.
+    if guard.is_none() {
+        let client = open_client(Some(resolved.as_str()))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        *guard = Some(client);
+    }
+
+    // First attempt.
+    let first_err = {
+        let client = guard.as_mut().expect("client just initialised");
+        match op(client).await {
+            Ok(v) => return Ok(v),
+            Err(e) => e,
+        }
+    };
+
+    // On transport errors: evict, reopen, retry once.
+    if is_transport_error(&first_err) {
+        *guard = None;
+        let mut fresh = open_client(Some(resolved.as_str()))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let result = op(&mut fresh).await;
+        match result {
+            Ok(v) => {
+                *guard = Some(fresh);
+                Ok(v)
+            }
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
+    } else {
+        Err(anyhow::anyhow!(first_err))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FRB API surface
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Returns the serial numbers of all currently connected AttentioLight-1
 /// devices. Times out after 5 seconds.
 pub async fn api_list_devices() -> Result<Vec<String>> {
@@ -111,132 +238,86 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
 /// Queries the current status of an AL-1 device. If `serial` is `None`, the
 /// first available device is used.
 pub async fn api_get_status(serial: Option<String>) -> Result<DeviceStatus> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let status = client
-        .get_status()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    Ok(status.into())
+    with_client(serial, async |c| c.get_status().await).await.map(Into::into)
 }
 
 /// Transition the device from STANDALONE to REMOTE mode. Returns session id.
 pub async fn api_claim(serial: Option<String>) -> Result<u16> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client.claim().await.map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async |c| c.claim().await).await
 }
 
 /// Release REMOTE control, returning the device to STANDALONE.
 pub async fn api_release(serial: Option<String>) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client.release().await.map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async |c| c.release().await).await
 }
 
 /// Round-trip ping in milliseconds.
 pub async fn api_ping(serial: Option<String>) -> Result<u64> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let start = std::time::Instant::now();
-    client.ping().await.map_err(|e| anyhow::anyhow!(e))?;
-    Ok(start.elapsed().as_millis() as u64)
+    with_client(serial, async |c| {
+        let start = std::time::Instant::now();
+        c.ping().await?;
+        Ok(start.elapsed().as_millis() as u64)
+    })
+    .await
 }
 
 /// Set LED colour by RGB. Auto-claims the device.
 pub async fn api_set_rgb(serial: Option<String>, r: u8, g: u8, b: u8) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .set_rgb(r, g, b)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async move |c| {
+        c.ensure_claimed().await?;
+        c.set_rgb(r, g, b).await
+    })
+    .await
 }
 
 /// Set LED colour by HSV. H is 0-359, S and V are 0-100.
 pub async fn api_set_hsv(serial: Option<String>, h: u16, s: u8, v: u8) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .set_hsv(h, s, v)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async move |c| {
+        c.ensure_claimed().await?;
+        c.set_hsv(h, s, v).await
+    })
+    .await
 }
 
 /// Set brightness 0-100%.
 pub async fn api_set_brightness(serial: Option<String>, brightness: u8) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .set_brightness(brightness)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async move |c| {
+        c.ensure_claimed().await?;
+        c.set_brightness(brightness).await
+    })
+    .await
 }
 
 /// Turn LEDs off.
 pub async fn api_led_off(serial: Option<String>) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client.led_off().await.map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async |c| {
+        c.ensure_claimed().await?;
+        c.led_off().await
+    })
+    .await
 }
 
 /// Wake from low-power mode.
 pub async fn api_power_on(serial: Option<String>) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client.power_on().await.map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async |c| {
+        c.ensure_claimed().await?;
+        c.power_on().await
+    })
+    .await
 }
 
 /// Enter low-power mode.
 pub async fn api_power_off(serial: Option<String>) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client.power_off().await.map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async |c| {
+        c.ensure_claimed().await?;
+        c.power_off().await
+    })
+    .await
 }
 
 /// Fetch all device metadata (read-only key-value pairs).
 pub async fn api_get_metadata(serial: Option<String>) -> Result<Vec<KvEntry>> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let entries = client
-        .get_metadata()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let entries = with_client(serial, async |c| c.get_metadata().await).await?;
     Ok(entries
         .into_iter()
         .map(|(key, value)| KvEntry { key, value })
@@ -245,13 +326,7 @@ pub async fn api_get_metadata(serial: Option<String>) -> Result<Vec<KvEntry>> {
 
 /// List all persistent device settings (key-value pairs).
 pub async fn api_settings_list(serial: Option<String>) -> Result<Vec<KvEntry>> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let entries = client
-        .settings_list()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let entries = with_client(serial, async |c| c.settings_list().await).await?;
     Ok(entries
         .into_iter()
         .map(|(key, value)| KvEntry { key, value })
@@ -260,13 +335,8 @@ pub async fn api_settings_list(serial: Option<String>) -> Result<Vec<KvEntry>> {
 
 /// Get the value of a single setting.
 pub async fn api_settings_get(serial: Option<String>, key: String) -> Result<String> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let (_k, value) = client
-        .settings_get(&key)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let (_k, value) =
+        with_client(serial, async move |c| c.settings_get(&key).await).await?;
     Ok(value)
 }
 
@@ -276,15 +346,9 @@ pub async fn api_settings_set(
     key: String,
     value: String,
 ) -> Result<()> {
-    let mut client = open_client(serial.as_deref())
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .ensure_claimed()
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
-    client
-        .settings_set(&key, &value)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
+    with_client(serial, async move |c| {
+        c.ensure_claimed().await?;
+        c.settings_set(&key, &value).await
+    })
+    .await
 }

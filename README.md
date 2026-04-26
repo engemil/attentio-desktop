@@ -30,22 +30,23 @@ It heavily reuses the core logic of the [`attentio-cli`](../attentio-cli) tool v
 ```
 attentio-desktop/
 ├── lib/                              # Flutter / Dart application
-│   ├── main.dart                     # Entry point (RustLib.init + runApp)
-│   ├── app.dart                      # MaterialApp wrapper + theme
+│   ├── main.dart                     # Entry point (RustLib.init, window/tray setup, runApp)
+│   ├── app.dart                      # MaterialApp wrapper + Riverpod-driven theme
 │   ├── features/
-│   │   ├── shell/app_shell.dart      # Sidebar + section switching
-│   │   ├── dashboard/                # Connected-device dashboard
-│   │   │   ├── dashboard_page.dart
-│   │   │   └── dashboard_provider.dart
-│   │   └── settings/settings_page.dart
-│   ├── widgets/                      # Reusable UI components
-│   │   └── device_card.dart
+│   │   ├── shell/app_shell.dart      # Adaptive drawer / rail / extended sidebar
+│   │   ├── overview/                 # Landing page: summary cards + per-device tiles
+│   │   ├── devices/                  # Devices list, detail page, providers, display helpers
+│   │   └── settings/                 # Appearance / Application / About + persistence
+│   ├── services/
+│   │   └── tray_service.dart         # System tray + minimize-to-tray cooperation
+│   ├── utils/
+│   │   └── responsive.dart           # Breakpoints + NavMode resolver
 │   └── src/rust/                     # Auto-generated FRB bindings (gitignored)
 ├── rust/                             # Rust crate exposed to Flutter
 │   ├── Cargo.toml
 │   └── src/api/                      # Functions/structs visible to Dart
 │       ├── mod.rs
-│       └── device_api.rs
+│       └── device_api.rs             # Persistent per-device ApClient cache + FFI surface
 ├── rust_builder/                     # Cargokit FFI plugin glue (do not edit)
 ├── linux/                            # GTK runner
 ├── macos/, windows/                  # Scaffolded, not yet supported

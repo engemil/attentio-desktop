@@ -97,5 +97,75 @@ Widget _harness({
       expect(find.byType(SettingsPage), findsOneWidget);
       expect(find.byType(DevicesPage), findsNothing);
     });
+
+    testWidgets('compact width shows hamburger that opens a Drawer',
+        (tester) async {
+      // Phone-portrait baseline: below kCompactWidth (600).
+      await tester.binding.setSurfaceSize(const Size(420, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        _harness(
+          overrides: [
+            devicesStreamProvider.overrideWith(
+                (ref) => Stream<List<DeviceInfo>>.value(const [])),
+          ],
+          child: const AppShell(),
+        ),
+      );
+      await tester.pump();
+
+      // No persistent sidebar tiles visible at compact width.
+      expect(find.widgetWithText(ListTile, 'Devices'), findsNothing);
+
+      // The AppBar shows a hamburger.
+      final hamburger = find.byTooltip('Open navigation');
+      expect(hamburger, findsOneWidget);
+
+      // Tapping it opens the drawer with the destination tiles.
+      await tester.tap(hamburger);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Devices'), findsOneWidget);
+
+      // Selecting a destination switches page and closes the drawer.
+      await tester.tap(find.widgetWithText(ListTile, 'Devices'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DevicesPage), findsOneWidget);
+      expect(find.widgetWithText(ListTile, 'Devices'), findsNothing);
+    });
+
+    testWidgets('extended width allows collapse to rail and back',
+        (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        _harness(
+          overrides: [
+            devicesStreamProvider.overrideWith(
+                (ref) => Stream<List<DeviceInfo>>.value(const [])),
+          ],
+          child: const AppShell(),
+        ),
+      );
+      await tester.pump();
+
+      // Extended sidebar shows label tiles.
+      expect(find.widgetWithText(ListTile, 'Devices'), findsOneWidget);
+
+      // Collapse to rail.
+      await tester.tap(find.byTooltip('Collapse sidebar'));
+      await tester.pumpAndSettle();
+
+      // Rail does not use ListTile; labels are still findable as Text.
+      expect(find.widgetWithText(ListTile, 'Devices'), findsNothing);
+      expect(find.byType(NavigationRail), findsOneWidget);
+
+      // Expand again.
+      await tester.tap(find.byTooltip('Expand sidebar'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Devices'), findsOneWidget);
+      expect(find.byType(NavigationRail), findsNothing);
+    });
   });
 }

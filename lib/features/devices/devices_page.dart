@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:attentio_desktop/features/devices/device_detail_page.dart';
+import 'package:attentio_desktop/features/devices/device_display.dart';
 import 'package:attentio_desktop/features/devices/devices_providers.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
@@ -21,17 +22,12 @@ class DevicesPage extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Text(
-                'Connected Devices',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh device list',
-                onPressed: () {
-                  ref.invalidate(devicesStreamProvider);
-                },
+              Flexible(
+                child: Text(
+                  'Connected Devices',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -81,26 +77,30 @@ class _DeviceListCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isNormal = device.mode == 'Normal';
-    final statusAsync = isNormal
-        ? ref.watch(deviceStatusStreamProvider(device.serial))
-        : const AsyncValue<DeviceStatus?>.data(null);
 
-    final name = device.name?.isNotEmpty == true
-        ? device.name!
-        : (device.deviceType ?? 'AttentioLight-1');
+    final name = deviceDisplayName(device);
 
-    final Color swatch = statusAsync.maybeWhen(
-      data: (s) => s == null
-          ? Colors.grey.shade500
-          : Color.fromARGB(255, s.currentR, s.currentG, s.currentB),
-      orElse: () => Colors.grey.shade400,
-    );
+    // Watch the per-device status stream for the swatch colour. The provider
+    // yields `DeviceStatus` (non-nullable), so we must handle the AsyncValue
+    // as non-nullable to avoid a silent type mismatch.
+    Color swatch = Colors.grey.shade500;
+    if (isNormal) {
+      final statusAsync = ref.watch(deviceStatusStreamProvider(device.serial));
+      swatch = statusAsync.maybeWhen(
+        data: (s) =>
+            Color.fromARGB(255, s.currentR, s.currentG, s.currentB),
+        orElse: () => Colors.grey.shade400,
+      );
+    }
 
     return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
@@ -123,12 +123,12 @@ class _DeviceListCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name,
-                        style: Theme.of(context).textTheme.titleMedium),
-                    Text('Serial: ${device.serial}',
-                        style: Theme.of(context).textTheme.bodySmall),
+                        style: Theme.of(context).textTheme.titleMedium,
+                        overflow: TextOverflow.ellipsis),
                     if (device.deviceType != null)
                       Text(
                         device.deviceType!,
+                        overflow: TextOverflow.ellipsis,
                         style:
                             Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: Theme.of(context)
@@ -136,6 +136,9 @@ class _DeviceListCard extends ConsumerWidget {
                                       .onSurfaceVariant,
                                 ),
                       ),
+                    Text('Serial: ${device.serial}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -144,6 +147,7 @@ class _DeviceListCard extends ConsumerWidget {
               const Icon(Icons.chevron_right),
             ],
           ),
+        ),
         ),
       ),
     );
