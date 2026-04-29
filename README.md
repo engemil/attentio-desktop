@@ -132,3 +132,27 @@ The optimised binary and its assets will be at:
 ## License
 
 MIT License, see `LICENSE` for details. For submodule licenses, see the individual repository `LICENSE` files.
+
+## Planned Implementation(s)
+
+### Linux USB Permissions (udev Rules)
+
+The desktop app requires udev rules on Linux to access Attentio USB devices without root privileges. This is currently a manual step and needs proper integration as the project matures.
+
+**Short-term (current):**
+Users must manually run the udev rules script from the CLI tool or firmware repository:
+```bash
+sudo ./scripts/udev_rules_attentio.sh   # from attentio-cli or attentiolight-1-firmware repo
+```
+This installs rules for the Attentio VID:PID (`1209:eea1`) and the STM32 DFU fallback (`0483:df11`).
+
+**Medium-term (with packaging):**
+When a distribution package is created (`.deb`, AppImage, Flatpak, etc.), udev rules should be installed automatically:
+- **`.deb` package:** Include udev rules via `debian/attentio-desktop.udev` or a `postinst` script that copies the `.rules` file to `/etc/udev/rules.d/`.
+- **AppImage:** Bundle the `.rules` file inside the image and document a manual copy step (AppImages are read-only and cannot write to `/etc/`).
+- **Flatpak:** Document manual udev setup (Flatpak is sandboxed and cannot write system files).
+
+**Long-term (in-app UX):**
+Add a USB permissions health check in the desktop app UI:
+- On startup or device discovery failure, detect if the device cannot be opened due to missing permissions.
+- Show a dialog with clear instructions, and optionally a "Fix permissions" button that uses `pkexec` to install the udev rules via a bundled helper script.
