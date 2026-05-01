@@ -1,5 +1,5 @@
 use anyhow::Result;
-use attentio::device::discovery::{find_devices, DeviceMode};
+use attentio::device::discovery::{find_devices, cache_remember, DeviceMode};
 use attentio::error::AttentioError;
 use attentio::protocol::{open_client, ApClient};
 use std::collections::HashMap;
@@ -61,6 +61,10 @@ pub struct DeviceInfo {
     pub mode: String,
     /// USB bus location, e.g. "Bus 001 Device 060".
     pub usb_location: Option<String>,
+    /// Serial/debug port path (CDC0), e.g. "/dev/ttyACM0".
+    pub serial_port: Option<String>,
+    /// Attentio Protocol port path (CDC1), e.g. "/dev/ttyACM1".
+    pub protocol_port: Option<String>,
 }
 
 /// A single key-value entry from metadata or settings.
@@ -231,6 +235,8 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
             device_type: d.device_type,
             mode: mode_string(d.mode),
             usb_location: d.usb_location,
+            serial_port: d.cdc0.as_ref().map(|p| p.path.clone()),
+            protocol_port: d.cdc1.as_ref().or(d.single_cdc.as_ref()).map(|p| p.path.clone()),
         })
         .collect())
 }
@@ -351,4 +357,19 @@ pub async fn api_settings_set(
         c.settings_set(&key, &value).await
     })
     .await
+}
+
+/// Rename a device by setting `device_name` via the cached client, then
+/// update the discovery name cache so subsequent `find_devices()` calls
+/// return the new name immediately (even if the port is busy).
+pub async fn api_rename_device(serial: Option<String>, name: String) -> Result<()> {
+    let resolved = resolve_serial(serial).await?;
+    let name_clone = name.clone();
+    with_client(Some(resolved.clone()), async move |c| {
+        c.ensure_claimed().await?;
+        c.settings_set("device_name", &name_clone).await
+    })
+    .await?;
+    cache_remember(&resolved, &name);
+    Ok(())
 }

@@ -31,14 +31,12 @@ attentio-desktop/
 │   ├── main.dart                     # Entry point (RustLib.init, window/tray setup, runApp)
 │   ├── app.dart                      # MaterialApp wrapper + Riverpod-driven theme
 │   ├── features/
-│   │   ├── shell/app_shell.dart      # Adaptive drawer / rail / extended sidebar
-│   │   ├── overview/                 # Landing page: summary cards + per-device tiles
-│   │   ├── devices/                  # Devices list, detail page, providers, display helpers
+│   │   ├── shell/app_shell.dart      # Top-level scaffold (wraps OverviewPage)
+│   │   ├── overview/                 # Landing page: summary cards + tappable device tiles
+│   │   ├── devices/                  # Device detail page, presets, providers, display helpers
 │   │   └── settings/                 # Appearance / Application / About + persistence
 │   ├── services/
 │   │   └── tray_service.dart         # System tray + minimize-to-tray cooperation
-│   ├── utils/
-│   │   └── responsive.dart           # Breakpoints + NavMode resolver
 │   └── src/rust/                     # Auto-generated FRB bindings (gitignored)
 ├── rust/                             # Rust crate exposed to Flutter
 │   ├── Cargo.toml

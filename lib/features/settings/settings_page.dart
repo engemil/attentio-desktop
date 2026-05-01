@@ -22,7 +22,9 @@ class SettingsPage extends ConsumerWidget {
     final settings = ref.watch(appSettingsProvider);
     final notifier = ref.read(appSettingsProvider.notifier);
 
-    return Align(
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: _kSettingsMaxContentWidth),
@@ -83,6 +85,7 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

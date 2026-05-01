@@ -16,6 +16,52 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ## [Development] (2026-05-01)
 
+Added
+
+- **Device presets** — per-device colour/brightness presets stored client-side
+  in `SharedPreferences`, keyed by USB serial number (max 12 per device). New
+  `presets_provider.dart` (model + Riverpod family notifier) and
+  `preset_edit_dialog.dart` (create / edit / delete). The `_PresetsCard` in
+  the device detail page shows a grid of presets with apply, save-current,
+  and export/import (JSON via `file_picker`). Import validates the serial
+  number and warns on mismatch.
+
+- **Port information** — added `serial_port` and `protocol_port` fields to
+  the Rust `DeviceInfo` struct (mapped from `cdc0` / `cdc1`). Shown in
+  overview device tiles and the device detail identity block.
+
+- **Inline device rename** — edit icon next to the device name in the
+  identity block opens a rename dialog. Uses a new `api_rename_device` FFI
+  function that writes the setting via the cached `ApClient` and updates the
+  discovery name cache (`cache_remember`) so the new name propagates
+  immediately without waiting for the next poll cycle.
+
+Changed
+
+- **Removed Devices page** — deleted `devices_page.dart`. Overview tiles are
+  now tappable and navigate directly to `DeviceDetailPage`.
+
+- **Simplified AppShell** — stripped the adaptive drawer / rail / extended
+  sidebar; `AppShell` is now a plain `Scaffold(body: OverviewPage())`.
+
+- **Settings accessible from overview** — plain `IconButton` (gear icon) on
+  the overview header row pushes `SettingsPage` as a full route with its own
+  `Scaffold` + `AppBar`.
+
+- **Renamed "Device Settings" card** — filtered out `device_name` from the
+  settings list (rename is handled inline); card title changed to
+  "Log Level Setting".
+
+- **Label consistency** — "Serial Number:" everywhere (not "Serial:"),
+  "Serial Data:" on overview tiles, "USB:" prefix on location.
+
+- **Widget tests** — updated for `OverviewPage`; removed all `DevicesPage`
+  references.
+
+Dependencies
+
+- Added `file_picker ^9.2.1`.
+
 Fixed
 
 - **Linux close crash (`FlutterEngineRemoveView`)** — closing the window on

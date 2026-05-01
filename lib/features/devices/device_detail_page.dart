@@ -1,8 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:attentio_desktop/features/devices/device_display.dart';
 import 'package:attentio_desktop/features/devices/devices_providers.dart';
+import 'package:attentio_desktop/features/devices/preset_edit_dialog.dart';
+import 'package:attentio_desktop/features/devices/presets_provider.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
 const _controlModeNames = ['STANDALONE', 'REMOTE'];
@@ -73,7 +79,18 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final device = widget.device;
+    // Watch the device stream so the page rebuilds when device info changes
+    // (e.g. after a rename). Fall back to the static widget.device if the
+    // device disappears from the stream momentarily.
+    final devicesAsync = ref.watch(devicesStreamProvider);
+    final device = devicesAsync.whenData((devices) {
+      try {
+        return devices.firstWhere((d) => d.serial == _serial);
+      } catch (_) {
+        return widget.device;
+      }
+    }).value ?? widget.device;
+
     final isNormal = device.mode == 'Normal';
     // Only watch the status stream when in normal mode. The provider yields
     // `DeviceStatus` (non-nullable), so we type AsyncValue accordingly. For
@@ -155,6 +172,37 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              _PresetsCard(
+                serial: _serial,
+                deviceName: displayName,
+                currentR: _pickedColor.red, // ignore: deprecated_member_use
+                currentG: _pickedColor.green, // ignore: deprecated_member_use
+                currentB: _pickedColor.blue, // ignore: deprecated_member_use
+                currentBrightness: _brightness.round(),
+                onApplyPreset: (preset) async {
+                  setState(() {
+                    _pickedColor = Color.fromARGB(
+                        255, preset.r, preset.g, preset.b);
+                    _brightness = preset.brightness.toDouble();
+                  });
+                  await _run(
+                    () async {
+                      await apiSetRgb(
+                        serial: _serial,
+                        r: preset.r,
+                        g: preset.g,
+                        b: preset.b,
+                      );
+                      await apiSetBrightness(
+                        serial: _serial,
+                        brightness: preset.brightness,
+                      );
+                    },
+                    'Preset "${preset.name}" applied',
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               _DeviceSettingsCard(serial: _serial),
               const SizedBox(height: 16),
               _MetadataCard(serial: _serial),
@@ -216,14 +264,69 @@ class _StatusHeader extends StatelessWidget {
   }
 }
 
-class _IdentityBlock extends StatelessWidget {
+class _IdentityBlock extends ConsumerWidget {
   const _IdentityBlock({required this.device, required this.swatch});
 
   final DeviceInfo device;
   final Color swatch;
 
+  Future<void> _editName(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController(text: device.name ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Device'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Device Name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newName == null) return;
+    try {
+      await apiRenameDevice(
+        serial: device.serial,
+        name: newName,
+      );
+      // Refresh device discovery and settings so the name updates everywhere.
+      ref.invalidate(devicesStreamProvider);
+      ref.invalidate(deviceSettingsProvider(device.serial));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newName.isEmpty
+                ? 'Device name cleared'
+                : 'Device renamed to "$newName"'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final displayName = deviceDisplayName(device);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,10 +348,27 @@ class _IdentityBlock extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                displayName,
-                style: Theme.of(context).textTheme.headlineSmall,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      displayName,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    tooltip: 'Rename device',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    onPressed: () => _editName(context, ref),
+                  ),
+                ],
               ),
               const SizedBox(height: 4),
               _ModeChip(mode: device.mode),
@@ -263,13 +383,25 @@ class _IdentityBlock extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               SelectableText(
-                'Serial: ${device.serial}',
+                'Serial Number: ${device.serial}',
                 style: Theme.of(context).textTheme.bodyMedium,
                 maxLines: 1,
               ),
               if (device.usbLocation != null)
                 Text(
-                  device.usbLocation!,
+                  'USB: ${device.usbLocation!}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (device.serialPort != null)
+                Text(
+                  'Serial Data Port: ${device.serialPort!}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (device.protocolPort != null)
+                Text(
+                  'Protocol Port: ${device.protocolPort!}',
                   style: Theme.of(context).textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -831,6 +963,357 @@ class _ColorChannelSlider extends StatelessWidget {
   }
 }
 
+class _PresetsCard extends ConsumerWidget {
+  const _PresetsCard({
+    required this.serial,
+    required this.deviceName,
+    required this.currentR,
+    required this.currentG,
+    required this.currentB,
+    required this.currentBrightness,
+    required this.onApplyPreset,
+  });
+
+  final String serial;
+  final String deviceName;
+  final int currentR;
+  final int currentG;
+  final int currentB;
+  final int currentBrightness;
+  final Future<void> Function(DevicePreset preset) onApplyPreset;
+
+  Future<void> _saveAsPreset(BuildContext context, WidgetRef ref) async {
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (_) => PresetEditDialog(
+        initialR: currentR,
+        initialG: currentG,
+        initialB: currentB,
+        initialBrightness: currentBrightness,
+      ),
+    );
+    if (result is DevicePreset) {
+      final added =
+          await ref.read(devicePresetsProvider(serial).notifier).addPreset(result);
+      if (!added && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Maximum of $kMaxPresets presets reached.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editPreset(
+      BuildContext context, WidgetRef ref, int index, DevicePreset preset) async {
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (_) => PresetEditDialog(existing: preset, index: index),
+    );
+    if (result is PresetDeleteSentinel) {
+      await ref.read(devicePresetsProvider(serial).notifier).removePreset(index);
+    } else if (result is DevicePreset) {
+      await ref.read(devicePresetsProvider(serial).notifier).updatePreset(index, result);
+    }
+  }
+
+  Future<void> _exportConfig(BuildContext context, WidgetRef ref) async {
+    final presets = ref.read(devicePresetsProvider(serial));
+
+    // Read device_name from the device settings.
+    String? deviceNameSetting;
+    try {
+      final settings = await apiSettingsList(serial: serial);
+      for (final s in settings) {
+        if (s.key == 'device_name') {
+          deviceNameSetting = s.value;
+          break;
+        }
+      }
+    } catch (_) {
+      // If we can't read settings, export without device_name.
+    }
+
+    final config = <String, dynamic>{
+      'serial': serial,
+      if (deviceNameSetting != null && deviceNameSetting.isNotEmpty)
+        'device_name': deviceNameSetting,
+      'presets': presets.map((p) => p.toJson()).toList(),
+    };
+
+    final json = const JsonEncoder.withIndent('  ').convert(config);
+
+    final result = await FilePicker.platform.saveFile(
+      dialogTitle: 'Export Device Configuration',
+      fileName: 'attentio_${serial.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    if (result != null) {
+      await File(result).writeAsString(json);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configuration exported.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importConfig(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Import Device Configuration',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+
+    Map<String, dynamic> config;
+    try {
+      config = jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Invalid configuration file: $e')),
+        );
+      }
+      return;
+    }
+
+    final fileSerial = config['serial'] as String?;
+    final fileDeviceName = config['device_name'] as String?;
+    final presetsJson = config['presets'] as List<dynamic>?;
+    final presets = presetsJson
+            ?.map((e) => DevicePreset.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+
+    // Build a confirmation message.
+    String message;
+    if (fileSerial == serial) {
+      message = 'Load configuration for "$deviceName"?\n\n'
+          'This will overwrite the current ${ref.read(devicePresetsProvider(serial)).length} preset(s) '
+          'with ${presets.length} preset(s) from the file.';
+    } else {
+      message = 'This configuration was saved for device '
+          '"${fileDeviceName ?? fileSerial ?? 'Unknown'}" '
+          '(serial: ${fileSerial ?? 'unknown'}).\n\n'
+          'Load it onto "$deviceName" (serial: $serial) instead?\n\n'
+          'This will overwrite the current ${ref.read(devicePresetsProvider(serial)).length} preset(s) '
+          'with ${presets.length} preset(s) from the file.';
+    }
+
+    if (!context.mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import Configuration'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // Apply presets.
+    await ref.read(devicePresetsProvider(serial).notifier).replaceAll(presets);
+
+    // Optionally apply device_name.
+    if (fileDeviceName != null && fileDeviceName.isNotEmpty) {
+      try {
+        await apiSettingsSet(
+          serial: serial,
+          key: 'device_name',
+          value: fileDeviceName,
+        );
+        // Refresh device discovery so the name updates.
+        ref.invalidate(devicesStreamProvider);
+      } catch (_) {
+        // Non-critical — presets are already imported.
+      }
+    }
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported ${presets.length} preset(s).')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final presets = ref.watch(devicePresetsProvider(serial));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Presets',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Import configuration',
+                  icon: const Icon(Icons.file_open_outlined),
+                  onPressed: () => _importConfig(context, ref),
+                ),
+                IconButton(
+                  tooltip: 'Export configuration',
+                  icon: const Icon(Icons.save_alt),
+                  onPressed: () => _exportConfig(context, ref),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (presets.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No presets yet. Use "Save as Preset" to capture the '
+                  'current colour and brightness.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color:
+                            Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final crossCount = constraints.maxWidth >= 480 ? 4 : 3;
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossCount,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                      childAspectRatio: 1.2,
+                    ),
+                    itemCount: presets.length,
+                    itemBuilder: (context, index) {
+                      final p = presets[index];
+                      final color = Color.fromARGB(255, p.r, p.g, p.b);
+                      return _PresetTile(
+                        preset: p,
+                        color: color,
+                        onTap: () => onApplyPreset(p),
+                        onEdit: () => _editPreset(context, ref, index, p),
+                      );
+                    },
+                  );
+                },
+              ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: presets.length >= kMaxPresets
+                    ? null
+                    : () => _saveAsPreset(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('Save as Preset'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PresetTile extends StatelessWidget {
+  const _PresetTile({
+    required this.preset,
+    required this.color,
+    required this.onTap,
+    required this.onEdit,
+  });
+
+  final DevicePreset preset;
+  final Color color;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color:
+                            Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: -8,
+                    right: -8,
+                    child: IconButton(
+                      icon: const Icon(Icons.edit, size: 14),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                      onPressed: onEdit,
+                      tooltip: 'Edit preset',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                preset.name,
+                style: Theme.of(context).textTheme.labelSmall,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+              ),
+              Text(
+                '${preset.brightness}%',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MetadataCard extends ConsumerWidget {
   const _MetadataCard({required this.serial});
 
@@ -890,7 +1373,7 @@ class _DeviceSettingsCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('Device Settings',
+                Text('Log Level Setting',
                     style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 IconButton(
@@ -909,7 +1392,9 @@ class _DeviceSettingsCard extends ConsumerWidget {
               ),
               error: (e, _) => Text('Error: $e'),
               data: (entries) => _EditableKvList(
-                entries: entries,
+                entries: entries
+                    .where((e) => e.key != 'device_name')
+                    .toList(),
                 onSave: (key, value) async {
                   try {
                     await apiSettingsSet(

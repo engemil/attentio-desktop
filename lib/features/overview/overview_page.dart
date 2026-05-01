@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:attentio_desktop/features/devices/device_detail_page.dart';
 import 'package:attentio_desktop/features/devices/device_display.dart';
 import 'package:attentio_desktop/features/devices/devices_providers.dart';
+import 'package:attentio_desktop/features/settings/settings_page.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 import 'package:attentio_desktop/utils/responsive.dart';
 
@@ -41,9 +43,27 @@ class _OverviewBody extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'System Overview',
-          style: Theme.of(context).textTheme.headlineMedium,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                'System Overview',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const SettingsPage(),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
         const SizedBox(height: 4),
         Text(
@@ -185,45 +205,79 @@ class _OverviewDeviceTile extends ConsumerWidget {
     final name = deviceDisplayName(device);
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            _ColorSwatch(statusAsync: statusAsync),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: Theme.of(context).textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (device.deviceType != null)
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => DeviceDetailPage(device: device),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              _ColorSwatch(statusAsync: statusAsync),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      device.deviceType!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                      name,
+                      style: Theme.of(context).textTheme.titleMedium,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  Text(
-                    'Serial: ${device.serial}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                    if (device.deviceType != null)
+                      Text(
+                        device.deviceType!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    Text(
+                      'Serial Number: ${device.serial}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (device.usbLocation != null)
+                      Text(
+                        'USB: ${device.usbLocation!}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (device.serialPort != null ||
+                        device.protocolPort != null)
+                      Text(
+                        [
+                          if (device.serialPort != null)
+                            'Serial Data: ${device.serialPort!}',
+                          if (device.protocolPort != null)
+                            'Protocol: ${device.protocolPort!}',
+                        ].join('  |  '),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
               ),
-            ),
-            _ModeBadge(mode: device.mode),
-            if (isNormal && !isCompactWidth(context)) ...[
-              const SizedBox(width: 12),
-              _StatusSummary(statusAsync: statusAsync),
+              _ModeBadge(mode: device.mode),
+              if (isNormal && !isCompactWidth(context)) ...[
+                const SizedBox(width: 12),
+                _StatusSummary(statusAsync: statusAsync),
+              ],
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right),
             ],
-          ],
+          ),
         ),
       ),
     );
