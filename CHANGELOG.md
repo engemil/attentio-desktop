@@ -14,6 +14,30 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-01)
+
+Changed
+
+- **USB VID/PID** — no desktop app code changes required; the app inherits the
+  new pid.codes VID:PID (`1209:EEA1`) from the shared `attentio` CLI library.
+
+Fixed
+
+- **Linux build permission error** — `flutter run -d linux` failed with
+  "Permission denied" when CMake tried to install the binary to `/usr/local/`.
+  Fixed `linux/CMakeLists.txt` to unconditionally set `CMAKE_INSTALL_PREFIX` to
+  the local bundle directory instead of only when the default was unset.
+
+- **Missing Linux build dependency** — added `libayatana-appindicator3-dev` to
+  the manual setup instructions in `README.md` and to the devcontainer
+  `Dockerfile`. Required by `tray_manager` at build time.
+
+- **Planned udev implementation** — added a "Planned Implementation(s)" section
+  to `README.md` documenting the short/medium/long-term roadmap for automatic
+  udev rules installation in packaged builds.
+
+---
+
 ## [Development] (2026-04-26)
 
 Added

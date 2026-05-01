@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y \
     locales \
     libcanberra-gtk-module \
     libcanberra-gtk3-module \
+    libayatana-appindicator3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up locale

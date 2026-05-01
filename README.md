@@ -1,8 +1,6 @@
 # Attentio Desktop
 
-Attentio Desktop is a graphical user interface (GUI) for managing AttentioLight-1 (AL-1) devices. It is built using **Flutter** for a natively compiled frontend, and **Rust** for a high-performance, safe backend core.
-
-It heavily reuses the core logic of the [`attentio-cli`](../attentio-cli) tool via [`flutter_rust_bridge`](https://github.com/fzyzcjy/flutter_rust_bridge), inspired by the architecture of robust apps like LocalSend.
+Attentio Desktop is a graphical user interface (GUI) for managing AttentioLight-1 (AL-1) devices. It is built using **Flutter** for a natively compiled frontend, and **Rust** for a high-performance, safe backend core. It heavily reuses the core logic of the [`attentio-cli`](github.com/engemil/attentio-cli) tool via [`flutter_rust_bridge`](https://github.com/fzyzcjy/flutter_rust_bridge).
 
 > **Platform support:** Linux is the primary target and is actively tested. The `macos/` and `windows/` folders are scaffolded by Flutter but are **not yet officially supported** — expect rough edges if you try them.
 
@@ -78,7 +76,7 @@ If you would rather set up the toolchain on your host machine:
 3. **Linux OS Dependencies:**
    ```bash
    sudo apt-get update
-   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config
+   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev
    ```
 
 ## Setup
