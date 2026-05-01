@@ -68,15 +68,26 @@ The devcontainer mounts your `/dev` folder and X11/Wayland socket so the app can
 
 If you would rather set up the toolchain on your host machine:
 
-1. **Rust & Cargo:** Install via [rustup](https://rustup.rs/).
-2. **Flutter SDK:** Install from [flutter.dev](https://docs.flutter.dev/get-started/install) and ensure the `flutter` command is available in your `PATH`.
+1. **Rust & Cargo:**
    ```bash
-   export PATH="$HOME/.cargo/bin:/path/to/your/flutter/bin:$PATH"
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+   source "$HOME/.cargo/env"
    ```
+
+2. **Flutter SDK (pinned to 3.41.7):**
+   ```bash
+   git clone --depth 1 --branch 3.41.7 https://github.com/flutter/flutter.git ~/flutter
+   export PATH="$HOME/flutter/bin:$PATH"
+   ```
+   Add the following to your `~/.bashrc` (or `~/.zshrc`) to persist across sessions:
+   ```bash
+   export PATH="$HOME/.cargo/bin:$HOME/flutter/bin:$PATH"
+   ```
+
 3. **Linux OS Dependencies:**
    ```bash
    sudo apt-get update
-   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev
+   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev
    ```
 
 ## Setup
@@ -91,6 +102,14 @@ If you would rather set up the toolchain on your host machine:
    ```
 
 ## Development
+
+> **Note:** If switching between the devcontainer and a manual (host) setup,
+> or if you encounter stale build cache errors, run a full clean first:
+> ```bash
+> flutter clean
+> rm -rf build/ rust/target/
+> flutter pub get
+> ```
 
 If you modify the Rust code under `rust/src/api/`, regenerate the Dart bindings before running:
 
