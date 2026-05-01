@@ -25,6 +25,10 @@ class TrayService with TrayListener, WindowListener {
     _initialized = true;
     windowManager.addListener(this);
     trayManager.addListener(this);
+    // Always intercept the close event so onWindowClose is called regardless
+    // of the minimize-to-tray setting. Without this the Linux embedder
+    // attempts to remove the implicit view, which is not allowed.
+    await windowManager.setPreventClose(true);
   }
 
   bool get _isSupported {
@@ -38,10 +42,6 @@ class TrayService with TrayListener, WindowListener {
   Future<void> setMinimizeToTray(bool enabled) async {
     if (!_isSupported) return;
     _minimizeToTray = enabled;
-
-    try {
-      await windowManager.setPreventClose(enabled);
-    } catch (_) {}
 
     if (enabled) {
       await _installTray();
@@ -90,10 +90,13 @@ class TrayService with TrayListener, WindowListener {
 
   @override
   void onWindowClose() async {
-    if (!_minimizeToTray) return;
-    try {
-      await windowManager.hide();
-    } catch (_) {}
+    if (_minimizeToTray) {
+      try {
+        await windowManager.hide();
+      } catch (_) {}
+    } else {
+      exit(0);
+    }
   }
 
   // --- TrayListener -------------------------------------------------------
@@ -115,8 +118,7 @@ class TrayService with TrayListener, WindowListener {
         await windowManager.show();
         break;
       case 'quit':
-        await windowManager.setPreventClose(false);
-        await windowManager.close();
+        exit(0);
         break;
     }
   }

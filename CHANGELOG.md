@@ -16,6 +16,19 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ## [Development] (2026-05-01)
 
+Fixed
+
+- **Linux close crash (`FlutterEngineRemoveView`)** — closing the window on
+  Linux triggered `FlutterEngineRemoveView` on the implicit view (which the
+  embedder rejects), followed by an OpenGL cleanup assertion. Root cause:
+  `window_manager`'s `close()` and `destroy()` both call `gtk_window_close()`
+  internally, which always attempts to remove the implicit view. Fixed in
+  `lib/services/tray_service.dart` by (1) setting `setPreventClose(true)` once
+  at init so `onWindowClose` is always invoked, (2) removing the
+  `setPreventClose(enabled)` toggle from `setMinimizeToTray` that was
+  overriding it, and (3) using `exit(0)` to terminate the process cleanly
+  when the user actually wants to quit, bypassing the GTK/Flutter teardown.
+
 Changed
 
 - **USB VID/PID** — no desktop app code changes required; the app inherits the
