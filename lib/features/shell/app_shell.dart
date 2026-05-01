@@ -27,19 +27,19 @@ const List<_NavDestination> _kDestinations = [
   _NavDestination(
     section: AppSection.overview,
     label: 'Overview',
-    icon: Icons.home_outlined,
+    icon: Icons.home,
     selectedIcon: Icons.home,
   ),
   _NavDestination(
     section: AppSection.devices,
     label: 'Devices',
-    icon: Icons.devices_other,
+    icon: Icons.devices,
     selectedIcon: Icons.devices,
   ),
   _NavDestination(
     section: AppSection.settings,
     label: 'Settings',
-    icon: Icons.settings_outlined,
+    icon: Icons.settings,
     selectedIcon: Icons.settings,
   ),
 ];

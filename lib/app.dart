@@ -38,10 +38,14 @@ class AttentioApp extends ConsumerWidget {
       theme: ThemeData(
         colorScheme: lightScheme,
         useMaterial3: true,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: lightScheme.primary.withValues(alpha: 0.08),
       ),
       darkTheme: ThemeData(
         colorScheme: darkScheme,
         useMaterial3: true,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: darkScheme.primary.withValues(alpha: 0.08),
       ),
       home: const AppShell(),
     );

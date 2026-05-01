@@ -25,8 +25,7 @@ class SettingsPage extends ConsumerWidget {
     return Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
-        constraints:
-            const BoxConstraints(maxWidth: _kSettingsMaxContentWidth),
+        constraints: const BoxConstraints(maxWidth: _kSettingsMaxContentWidth),
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           child: Column(
@@ -79,10 +78,7 @@ class SettingsPage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 24),
-              _Section(
-                title: 'About',
-                children: const [_AboutTile()],
-              ),
+              _Section(title: 'About', children: const [_AboutTile()]),
             ],
           ),
         ),
@@ -107,8 +103,8 @@ class _Section extends StatelessWidget {
           child: Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
         ),
         Card(
@@ -140,12 +136,10 @@ class _ResponsiveSettingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide =
-            constraints.maxWidth >= _kSettingsResponsiveBreakpoint;
+        final wide = constraints.maxWidth >= _kSettingsResponsiveBreakpoint;
         if (wide) {
           return Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -155,19 +149,13 @@ class _ResponsiveSettingTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title,
-                          style: Theme.of(context).textTheme.bodyLarge),
+                      Text(title, style: Theme.of(context).textTheme.bodyLarge),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -185,8 +173,7 @@ class _ResponsiveSettingTile extends StatelessWidget {
         }
         // Narrow: stack the control under the label.
         return Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -199,18 +186,18 @@ class _ResponsiveSettingTile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title,
-                            style: Theme.of(context).textTheme.bodyLarge),
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
                         const SizedBox(height: 2),
                         Text(
                           subtitle,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                       ],
@@ -289,8 +276,7 @@ class _AccentColorTile extends StatelessWidget {
     return _ResponsiveSettingTile(
       icon: Icons.color_lens,
       title: 'Accent colour',
-      subtitle:
-          'Seed colour used to derive the application colour scheme.',
+      subtitle: 'Seed colour used to derive the application colour scheme.',
       control: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -321,20 +307,22 @@ class _ColorDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected
-                ? Theme.of(context).colorScheme.onSurface
-                : Theme.of(context).colorScheme.outlineVariant,
-            width: selected ? 3 : 1,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected
+                  ? Theme.of(context).colorScheme.onSurface
+                  : Theme.of(context).colorScheme.outlineVariant,
+              width: selected ? 3 : 1,
+            ),
           ),
         ),
       ),
@@ -358,10 +346,7 @@ class _LanguageTile extends StatelessWidget {
         value: current,
         onChanged: (v) => v == null ? null : onChanged(v),
         items: const [
-          DropdownMenuItem(
-            value: AppLanguage.english,
-            child: Text('English'),
-          ),
+          DropdownMenuItem(value: AppLanguage.english, child: Text('English')),
         ],
       ),
     );
@@ -384,13 +369,9 @@ class _AboutTile extends StatelessWidget {
         return Column(
           children: [
             ListTile(
-              leading: Icon(
-                Icons.lightbulb,
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              leading: const Icon(Icons.lightbulb),
               title: Text(appName),
-              subtitle:
-                  const Text('Desktop GUI for AttentioLight-1 devices.'),
+              subtitle: const Text('Desktop GUI for AttentioLight-1 devices.'),
             ),
             const Divider(height: 1),
             ListTile(
@@ -402,11 +383,12 @@ class _AboutTile extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.code),
               title: const Text('Source code'),
-              subtitle: const Text('github.com/anomalyco/attentio-desktop'),
+              subtitle: const Text('github.com/engemil/attentio-desktop'),
               trailing: const Icon(Icons.open_in_new),
               onTap: () async {
                 final uri = Uri.parse(
-                    'https://github.com/anomalyco/attentio-desktop');
+                  'https://github.com/engemil/attentio-desktop',
+                );
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri);
                 }

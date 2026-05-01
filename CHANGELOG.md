@@ -31,6 +31,34 @@ Fixed
 
 Changed
 
+- **Replaced ink splash ripple with subtle highlight across the entire app** —
+  set `splashFactory: NoSplash.splashFactory` and a primary-tinted
+  `highlightColor` on both the light and dark `ThemeData` in `lib/app.dart`.
+  Every button, `ListTile`, `IconButton`, `SegmentedButton`, `SwitchListTile`,
+  `NavigationRail`, `DropdownButton`, and the built-in Licences page now shows
+  a clean colour-change press feedback instead of the Material ripple
+  animation. Removed the per-widget `Theme` / `splashColor` / `hoverColor`
+  overrides that were previously applied piecemeal.
+
+- **Colour preset dots and accent colour dots** — replaced `InkWell` with
+  `GestureDetector` + `MouseRegion` in `device_detail_page.dart` and
+  `settings_page.dart` for tap feedback without any splash artifact.
+
+- **Device list cards** — replaced `GestureDetector` + `MouseRegion` with
+  `InkWell` in `devices_page.dart` so tapping a device card now shows the
+  subtle highlight feedback (previously had no visual feedback at all).
+
+- **Sidebar navigation icons** — all three destinations (Overview, Devices,
+  Settings) now use the filled icon variant at all times instead of switching
+  between outlined (unselected) and filled (selected). Selection state is
+  communicated purely through the existing colour change.
+
+- **About section lightbulb icon** — removed the explicit
+  `colorScheme.primary` tint from the app-name `ListTile` icon so it matches
+  the default icon colour used by the other About entries.
+
+Changed
+
 - **USB VID/PID** — no desktop app code changes required; the app inherits the
   new pid.codes VID:PID (`1209:EEA1`) from the shared `attentio` CLI library.
 

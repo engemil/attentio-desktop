@@ -95,12 +95,9 @@ class _DeviceListCard extends ConsumerWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: Padding(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
@@ -147,7 +144,6 @@ class _DeviceListCard extends ConsumerWidget {
               const Icon(Icons.chevron_right),
             ],
           ),
-        ),
         ),
       ),
     );
