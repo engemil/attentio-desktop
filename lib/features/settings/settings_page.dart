@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -400,17 +401,61 @@ class _AboutTile extends StatelessWidget {
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.description_outlined),
-              title: const Text('Licences'),
+              title: const Text('License'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => showLicensePage(
-                context: context,
-                applicationName: appName,
-                applicationVersion: version,
-              ),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _AppLicensePage(
+                      appName: appName,
+                      version: version,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         );
       },
+    );
+  }
+}
+
+/// A simple page showing only the application's own license text.
+class _AppLicensePage extends StatelessWidget {
+  const _AppLicensePage({
+    required this.appName,
+    required this.version,
+  });
+
+  final String appName;
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('$appName License')),
+      body: FutureBuilder<String>(
+        future: rootBundle.loadString('LICENSE'),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Could not load license.'));
+          }
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: SelectableText(
+              snapshot.data ?? '',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontFamily: 'monospace',
+                    height: 1.5,
+                  ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

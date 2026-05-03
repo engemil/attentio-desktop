@@ -23,10 +23,19 @@ Changed
   64x64 card placed on the same row as the Connected / Normal / Bootloader
   summary cards (stacks below on narrow screens).
 
+- **Device list scrollbar** — the device list on the overview page now shows
+  a persistent scrollbar indicator (`thumbVisibility: true`).
+
 - **Device list refresh button** — added a "Refresh" button next to the
   "Devices" heading. Pressing it triggers an immediate device poll and a
   15-second fast-polling burst (2 s interval instead of the default 5 s),
   showing a spinner and countdown while active.
+
+- **Simplified license page** — replaced Flutter's built-in multi-package
+  `showLicensePage` with a custom single-page view showing only the
+  application's MIT license text (monospace, selectable, no sidebar).
+  Renamed "Licences" to "License" in the About section. Added `LICENSE`
+  as a bundled asset.
 
 Added
 

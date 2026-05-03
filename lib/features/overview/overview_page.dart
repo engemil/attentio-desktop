@@ -134,11 +134,14 @@ class _OverviewBody extends ConsumerWidget {
                     'No devices detected. Ensure your AL-1 is connected.',
                   ),
                 )
-              : ListView.separated(
-                  itemCount: devices.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) =>
-                      _OverviewDeviceTile(device: devices[i]),
+              : Scrollbar(
+                  thumbVisibility: true,
+                  child: ListView.separated(
+                    itemCount: devices.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, i) =>
+                        _OverviewDeviceTile(device: devices[i]),
+                  ),
                 ),
         ),
       ],
