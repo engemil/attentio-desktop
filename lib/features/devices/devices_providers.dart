@@ -4,8 +4,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
+/// Holds the expiry time of the current fast-polling window (if any).
+class DeviceRefreshNotifier extends Notifier<DateTime?> {
+  @override
+  DateTime? build() => null;
+
+  void refresh() {
+    state = DateTime.now().add(const Duration(seconds: 15));
+  }
+}
+
+final deviceRefreshProvider =
+    NotifierProvider<DeviceRefreshNotifier, DateTime?>(
+  DeviceRefreshNotifier.new,
+);
+
 /// Polls [apiListDevicesFull] on an interval so device lists stay fresh even
-/// without manual refresh. Emits a new list on every tick.
+/// without manual refresh. When [deviceRefreshProvider] indicates fast-polling,
+/// the interval drops to 2 seconds for 15 seconds.
 final devicesStreamProvider = StreamProvider<List<DeviceInfo>>((ref) async* {
   // Emit an initial value as quickly as possible, then continue polling.
   try {
@@ -13,8 +29,14 @@ final devicesStreamProvider = StreamProvider<List<DeviceInfo>>((ref) async* {
   } catch (_) {
     yield <DeviceInfo>[];
   }
-  final timer = Stream.periodic(const Duration(seconds: 5));
-  await for (final _ in timer) {
+
+  while (true) {
+    final fastUntil = ref.read(deviceRefreshProvider);
+    final isFast =
+        fastUntil != null && DateTime.now().isBefore(fastUntil);
+    final interval =
+        isFast ? const Duration(seconds: 2) : const Duration(seconds: 5);
+    await Future<void>.delayed(interval);
     try {
       yield await apiListDevicesFull();
     } catch (_) {

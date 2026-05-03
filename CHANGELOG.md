@@ -16,6 +16,18 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ## [Development] (2026-05-01)
 
+Changed
+
+- **Cleaner overview header** — removed the "System Overview" title and
+  "At-a-glance status…" subtitle text. The settings button is now a larger
+  64x64 card placed on the same row as the Connected / Normal / Bootloader
+  summary cards (stacks below on narrow screens).
+
+- **Device list refresh button** — added a "Refresh" button next to the
+  "Devices" heading. Pressing it triggers an immediate device poll and a
+  15-second fast-polling burst (2 s interval instead of the default 5 s),
+  showing a spinner and countdown while active.
+
 Added
 
 - **Device presets** — per-device colour/brightness presets stored client-side

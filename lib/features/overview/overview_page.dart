@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,39 +42,29 @@ class _OverviewBody extends ConsumerWidget {
     final normal = devices.where((d) => d.mode == 'Normal').length;
     final bootloader = devices.where((d) => d.mode == 'Bootloader').length;
 
+    final settingsButton = SizedBox(
+      height: 64,
+      width: 64,
+      child: Card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SettingsPage(),
+              ),
+            );
+          },
+          child: const Center(
+            child: Icon(Icons.settings, size: 28),
+          ),
+        ),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Text(
-                'System Overview',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Settings',
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const SettingsPage(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'At-a-glance status of every connected AttentioLight-1.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 20),
         LayoutBuilder(
           builder: (context, constraints) {
             final cards = [
@@ -105,6 +97,8 @@ class _OverviewBody extends ConsumerWidget {
                     if (i > 0) const SizedBox(height: 8),
                     cards[i],
                   ],
+                  const SizedBox(height: 8),
+                  settingsButton,
                 ],
               );
             }
@@ -115,14 +109,22 @@ class _OverviewBody extends ConsumerWidget {
                 Expanded(child: cards[1]),
                 const SizedBox(width: 12),
                 Expanded(child: cards[2]),
+                const SizedBox(width: 12),
+                settingsButton,
               ],
             );
           },
         ),
         const SizedBox(height: 24),
-        Text(
-          'Devices',
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          children: [
+            Text(
+              'Devices',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(width: 8),
+            _RefreshButton(),
+          ],
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -373,6 +375,61 @@ class _StatusSummary extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// Refresh button that triggers a 15-second fast-polling burst.
+/// Shows a spinning icon and countdown while active.
+class _RefreshButton extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_RefreshButton> createState() => _RefreshButtonState();
+}
+
+class _RefreshButtonState extends ConsumerState<_RefreshButton> {
+  Timer? _uiTimer;
+  int _secondsLeft = 0;
+
+  void _startRefresh() {
+    ref.read(deviceRefreshProvider.notifier).refresh();
+    ref.invalidate(devicesStreamProvider);
+    setState(() => _secondsLeft = 15);
+    _uiTimer?.cancel();
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final fastUntil = ref.read(deviceRefreshProvider);
+      if (fastUntil == null || DateTime.now().isAfter(fastUntil)) {
+        timer.cancel();
+        if (mounted) setState(() => _secondsLeft = 0);
+        return;
+      }
+      final remaining =
+          fastUntil.difference(DateTime.now()).inSeconds.clamp(0, 15);
+      if (mounted) setState(() => _secondsLeft = remaining);
+    });
+  }
+
+  @override
+  void dispose() {
+    _uiTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = _secondsLeft > 0;
+    return TextButton.icon(
+      onPressed: _startRefresh,
+      icon: isActive
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            )
+          : const Icon(Icons.refresh, size: 20),
+      label: Text(isActive ? 'Refreshing (${_secondsLeft}s)' : 'Refresh'),
     );
   }
 }
