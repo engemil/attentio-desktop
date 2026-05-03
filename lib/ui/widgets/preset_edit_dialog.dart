@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:attentio_desktop/features/devices/presets_provider.dart';
+import 'package:attentio_desktop/providers/presets_provider.dart';
 
 /// Dialog for creating or editing a [DevicePreset].
 ///

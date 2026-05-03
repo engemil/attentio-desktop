@@ -14,6 +14,30 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-03)
+
+Changed
+
+- **Restructured `lib/` directory** — replaced the flat `features/` layout
+  with a layer-based structure:
+  - `ui/pages/` — full-screen views (`overview_page`, `device_detail_page`,
+    `settings_page`).
+  - `ui/widgets/` — reusable components (`app_shell`, `preset_edit_dialog`).
+  - `ui/utils/` — UI-specific helpers (`responsive`, `device_display`).
+  - `providers/` — all Riverpod state management (`devices_providers`,
+    `presets_provider`, `settings_provider`).
+  - `services/` — platform integrations (`tray_service`), unchanged.
+  All `package:attentio_desktop/features/…` imports updated across source,
+  widget tests, and integration tests.
+
+Fixed
+
+- **Integration test stale import** — `simple_test.dart` referenced a
+  non-existent `dashboard_page.dart` and `DashboardPage` class. Updated to
+  import `ui/pages/overview_page.dart` and assert on `OverviewPage`.
+
+---
+
 ## [Development] (2026-05-01)
 
 Changed

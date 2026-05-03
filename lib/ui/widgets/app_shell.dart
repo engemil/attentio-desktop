@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:attentio_desktop/features/overview/overview_page.dart';
+import 'package:attentio_desktop/ui/pages/overview_page.dart';
 
 /// Root scaffold. The overview page is the sole top-level view; settings are
 /// accessible via an icon button on the overview header.

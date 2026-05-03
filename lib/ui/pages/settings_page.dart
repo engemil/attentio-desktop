@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:attentio_desktop/features/settings/settings_provider.dart';
+import 'package:attentio_desktop/providers/settings_provider.dart';
 
 /// Breakpoint (content-area width) at which wide trailing controls switch from
 /// an inline trailing position to a stacked layout below the label.

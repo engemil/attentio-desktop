@@ -30,12 +30,22 @@ attentio-desktop/
 ├── lib/                              # Flutter / Dart application
 │   ├── main.dart                     # Entry point (RustLib.init, window/tray setup, runApp)
 │   ├── app.dart                      # MaterialApp wrapper + Riverpod-driven theme
-│   ├── features/
-│   │   ├── shell/app_shell.dart      # Top-level scaffold (wraps OverviewPage)
-│   │   ├── overview/                 # Landing page: summary cards + tappable device tiles
-│   │   ├── devices/                  # Device detail page, presets, providers, display helpers
-│   │   └── settings/                 # Appearance / Application / About + persistence
-│   ├── services/
+│   ├── ui/                           # All visual / presentation code
+│   │   ├── pages/                    # Full-screen views
+│   │   │   ├── overview_page.dart    # Landing page: summary cards + tappable device tiles
+│   │   │   ├── device_detail_page.dart  # Per-device control panel
+│   │   │   └── settings_page.dart    # Appearance / Application / About
+│   │   ├── widgets/                  # Reusable UI components
+│   │   │   ├── app_shell.dart        # Top-level scaffold (wraps OverviewPage)
+│   │   │   └── preset_edit_dialog.dart  # Preset create/edit/delete dialog
+│   │   └── utils/                    # UI-specific helpers
+│   │       ├── responsive.dart       # Responsive layout breakpoints
+│   │       └── device_display.dart   # Canonical device display name resolver
+│   ├── providers/                    # Riverpod state management
+│   │   ├── devices_providers.dart    # Device list stream, per-device status, metadata, settings
+│   │   ├── presets_provider.dart     # Per-device colour presets with SharedPreferences persistence
+│   │   └── settings_provider.dart    # App settings (theme, accent, tray, autostart) persistence
+│   ├── services/                     # Platform integrations and side-effect services
 │   │   └── tray_service.dart         # System tray + minimize-to-tray cooperation
 │   └── src/rust/                     # Auto-generated FRB bindings (gitignored)
 ├── rust/                             # Rust crate exposed to Flutter

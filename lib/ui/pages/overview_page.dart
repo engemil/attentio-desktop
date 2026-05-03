@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:attentio_desktop/features/devices/device_detail_page.dart';
-import 'package:attentio_desktop/features/devices/device_display.dart';
-import 'package:attentio_desktop/features/devices/devices_providers.dart';
-import 'package:attentio_desktop/features/settings/settings_page.dart';
+import 'package:attentio_desktop/ui/pages/device_detail_page.dart';
+import 'package:attentio_desktop/ui/utils/device_display.dart';
+import 'package:attentio_desktop/providers/devices_providers.dart';
+import 'package:attentio_desktop/ui/pages/settings_page.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
-import 'package:attentio_desktop/utils/responsive.dart';
+import 'package:attentio_desktop/ui/utils/responsive.dart';
 
 /// Top-level status summary across all connected AL-1 devices.
 ///

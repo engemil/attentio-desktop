@@ -5,10 +5,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:attentio_desktop/features/devices/device_display.dart';
-import 'package:attentio_desktop/features/devices/devices_providers.dart';
-import 'package:attentio_desktop/features/devices/preset_edit_dialog.dart';
-import 'package:attentio_desktop/features/devices/presets_provider.dart';
+import 'package:attentio_desktop/ui/utils/device_display.dart';
+import 'package:attentio_desktop/providers/devices_providers.dart';
+import 'package:attentio_desktop/ui/widgets/preset_edit_dialog.dart';
+import 'package:attentio_desktop/providers/presets_provider.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
 const _controlModeNames = ['STANDALONE', 'REMOTE'];

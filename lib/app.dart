@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:attentio_desktop/features/settings/settings_provider.dart';
-import 'package:attentio_desktop/features/shell/app_shell.dart';
+import 'package:attentio_desktop/providers/settings_provider.dart';
+import 'package:attentio_desktop/ui/widgets/app_shell.dart';
 import 'package:attentio_desktop/services/tray_service.dart';
 
 /// Top-level [MaterialApp] wrapper.

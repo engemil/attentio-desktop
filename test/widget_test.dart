@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:attentio_desktop/features/devices/devices_providers.dart';
-import 'package:attentio_desktop/features/overview/overview_page.dart';
-import 'package:attentio_desktop/features/shell/app_shell.dart';
+import 'package:attentio_desktop/providers/devices_providers.dart';
+import 'package:attentio_desktop/ui/pages/overview_page.dart';
+import 'package:attentio_desktop/ui/widgets/app_shell.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
 /// Wraps [child] in a [ProviderScope] + [MaterialApp] with the given Riverpod
