@@ -16,6 +16,60 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ## [Development] (2026-05-03)
 
+Added
+
+- **Favourite presets on overview** — up to 4 presets per device can be marked
+  as favourites (star icon on each preset tile in the detail page). Favourited
+  presets appear as coloured squares inline on the overview device tile; tapping
+  one immediately applies that colour and brightness to the device. New
+  `isFavorite` field on `DevicePreset`, `toggleFavorite()` method, and
+  `deviceFavoritePresetsProvider` derived provider in `presets_provider.dart`.
+
+- **Device swatch icon** — the colour swatch on overview device tiles now
+  resembles the AL-1 product silhouette: a coloured rectangle (light head) with
+  a wider neutral base underneath, drawn in front with a slight overlap.
+
+Changed
+
+- **Responsive overview device tiles** — device tiles use a `LayoutBuilder`
+  with three breakpoints (520 / 350 px) to wrap content across 1, 2, or 3 rows
+  instead of truncating text with ellipsis. The chevron stays vertically
+  centred across all rows. `_FavoritePresetsRow` uses `Wrap` so many presets
+  flow to additional lines. `_StatusSummary` is wrapped in `Flexible` in
+  wrapped layouts to prevent overflow into the chevron.
+
+- **Status always visible** — removed the `isCompactWidth` check that hid
+  `_StatusSummary` at narrow widths. Status (control mode + brightness) is now
+  always shown for Normal-mode devices.
+
+- **Compact summary cards** — the Connected / Normal / Bootloader cards now
+  use smaller padding (12×8), a 24 px icon, and tighter spacing (6–8 px gaps).
+  The narrow layout (< 580 px) renders as a 2×2 grid (Connected + Settings on
+  top, Normal + Bootloader below) instead of a vertical stack. Card text uses
+  `maxLines: 1` with ellipsis as a safety net. The settings button sizes itself
+  via `AspectRatio(1)` + `IntrinsicHeight` to match card height.
+
+- **Summary card breakpoint** raised from 520 px to 580 px so the 2×2 grid
+  kicks in before card labels would wrap.
+
+Fixed
+
+- **Minimum window size on Linux** — `window_manager`'s `setMinimumSize` was
+  silently failing on some compositors (especially Wayland) due to an
+  uninitialised `window_hints` bug in v0.4.3. Added
+  `gtk_widget_set_size_request(GTK_WIDGET(window), 360, 480)` in the native
+  GTK runner (`linux/runner/my_application.cc`) as a reliable GTK-level
+  constraint that works on both X11 and Wayland.
+
+Dependencies
+
+- Upgraded `window_manager` from `^0.4.3` to `^0.5.0` (fixes uninitialised
+  `window_hints` flag in release builds).
+
+---
+
+## [Development] (2026-05-03)
+
 Changed
 
 - **Restructured `lib/` directory** — replaced the flat `features/` layout

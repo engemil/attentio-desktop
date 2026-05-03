@@ -7,6 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Maximum number of presets a single device may hold.
 const int kMaxPresets = 12;
 
+/// Maximum number of presets that can be marked as favourites.
+const int kMaxFavorites = 4;
+
 /// A single colour + brightness preset for an AL-1 device.
 @immutable
 class DevicePreset {
@@ -15,6 +18,7 @@ class DevicePreset {
   final int g;
   final int b;
   final int brightness; // 0-100
+  final bool isFavorite;
 
   const DevicePreset({
     required this.name,
@@ -22,6 +26,7 @@ class DevicePreset {
     required this.g,
     required this.b,
     required this.brightness,
+    this.isFavorite = false,
   });
 
   DevicePreset copyWith({
@@ -30,6 +35,7 @@ class DevicePreset {
     int? g,
     int? b,
     int? brightness,
+    bool? isFavorite,
   }) {
     return DevicePreset(
       name: name ?? this.name,
@@ -37,6 +43,7 @@ class DevicePreset {
       g: g ?? this.g,
       b: b ?? this.b,
       brightness: brightness ?? this.brightness,
+      isFavorite: isFavorite ?? this.isFavorite,
     );
   }
 
@@ -46,6 +53,7 @@ class DevicePreset {
         'g': g,
         'b': b,
         'brightness': brightness,
+        'isFavorite': isFavorite,
       };
 
   factory DevicePreset.fromJson(Map<String, dynamic> json) => DevicePreset(
@@ -54,6 +62,7 @@ class DevicePreset {
         g: json['g'] as int,
         b: json['b'] as int,
         brightness: json['brightness'] as int,
+        isFavorite: json['isFavorite'] as bool? ?? false,
       );
 }
 
@@ -124,6 +133,21 @@ class DevicePresetsNotifier extends Notifier<List<DevicePreset>> {
     state = presets.take(kMaxPresets).toList();
     await _persist();
   }
+
+  /// Toggle the favourite flag on the preset at [index].
+  /// Returns `false` if toggling ON would exceed [kMaxFavorites].
+  Future<bool> toggleFavorite(int index) async {
+    if (index < 0 || index >= state.length) return false;
+    final preset = state[index];
+    if (!preset.isFavorite) {
+      // Check capacity before toggling on.
+      final currentCount = state.where((p) => p.isFavorite).length;
+      if (currentCount >= kMaxFavorites) return false;
+    }
+    state = [...state]..[index] = preset.copyWith(isFavorite: !preset.isFavorite);
+    await _persist();
+    return true;
+  }
 }
 
 /// Per-device presets provider, keyed by serial number.
@@ -131,3 +155,12 @@ final devicePresetsProvider = NotifierProvider.family<DevicePresetsNotifier,
     List<DevicePreset>, String>(
   (serial) => DevicePresetsNotifier(serial),
 );
+
+/// Derived provider returning only the favourite presets for a device.
+final deviceFavoritePresetsProvider =
+    Provider.family<List<DevicePreset>, String>((ref, serial) {
+  return ref
+      .watch(devicePresetsProvider(serial))
+      .where((p) => p.isFavorite)
+      .toList();
+});

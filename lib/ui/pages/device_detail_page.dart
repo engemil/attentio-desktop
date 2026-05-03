@@ -1210,6 +1210,19 @@ class _PresetsCard extends ConsumerWidget {
                         color: color,
                         onTap: () => onApplyPreset(p),
                         onEdit: () => _editPreset(context, ref, index, p),
+                        onToggleFavorite: () async {
+                          final ok = await ref
+                              .read(devicePresetsProvider(serial).notifier)
+                              .toggleFavorite(index);
+                          if (!ok && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Maximum of $kMaxFavorites favourites reached.'),
+                              ),
+                            );
+                          }
+                        },
                       );
                     },
                   );
@@ -1239,12 +1252,14 @@ class _PresetTile extends StatelessWidget {
     required this.color,
     required this.onTap,
     required this.onEdit,
+    required this.onToggleFavorite,
   });
 
   final DevicePreset preset;
   final Color color;
   final VoidCallback onTap;
   final VoidCallback onEdit;
+  final VoidCallback onToggleFavorite;
 
   @override
   Widget build(BuildContext context) {
@@ -1286,6 +1301,30 @@ class _PresetTile extends StatelessWidget {
                       ),
                       onPressed: onEdit,
                       tooltip: 'Edit preset',
+                    ),
+                  ),
+                  Positioned(
+                    top: -8,
+                    left: -8,
+                    child: IconButton(
+                      icon: Icon(
+                        preset.isFavorite
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        size: 16,
+                        color: preset.isFavorite
+                            ? Colors.amber
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                      onPressed: onToggleFavorite,
+                      tooltip: preset.isFavorite
+                          ? 'Remove from overview'
+                          : 'Show on overview',
                     ),
                   ),
                 ],
