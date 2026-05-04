@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const int kMaxPresets = 12;
 
 /// Maximum number of presets that can be marked as favourites.
-const int kMaxFavorites = 4;
+const int kMaxFavorites = 6;
 
 /// A single colour + brightness preset for an AL-1 device.
 @immutable

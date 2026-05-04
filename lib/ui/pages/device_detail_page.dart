@@ -331,17 +331,49 @@ class _IdentityBlock extends ConsumerWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 72,
+        // AL-1 product silhouette: light head + base.
+        SizedBox(
+          width: 88,
           height: 72,
-          decoration: BoxDecoration(
-            color: swatch,
-            shape: BoxShape.circle,
-            border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant),
+          child: Stack(
+            children: [
+              // Light head (behind)
+              Positioned(
+                top: 0,
+                left: 10, // (88 - 68) / 2 ≈ 10
+                child: Container(
+                  width: 68,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: swatch,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      topRight: Radius.circular(14),
+                    ),
+                    border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
+                  child: const Icon(Icons.lightbulb,
+                      size: 36, color: Colors.white70),
+                ),
+              ),
+              // Base (in front, at bottom)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                child: Container(
+                  width: 88,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant),
+                  ),
+                ),
+              ),
+            ],
           ),
-          child: const Icon(Icons.lightbulb,
-              size: 36, color: Colors.white70),
         ),
         const SizedBox(width: 20),
         Expanded(
@@ -914,7 +946,7 @@ class _ColorDot extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             color: color,
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: selected
                   ? Theme.of(context).colorScheme.primary
@@ -1199,7 +1231,7 @@ class _PresetsCard extends ConsumerWidget {
                       crossAxisCount: crossCount,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
-                      childAspectRatio: 1.2,
+                      childAspectRatio: 1.0,
                     ),
                     itemCount: presets.length,
                     itemBuilder: (context, index) {
@@ -1263,90 +1295,96 @@ class _PresetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine if the color is light to pick contrasting icon/text colors.
+    final luminance = color.computeLuminance();
+    final fgColor = luminance > 0.4 ? Colors.black87 : Colors.white;
+    final fgDim = luminance > 0.4 ? Colors.black54 : Colors.white70;
+
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      color: color,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                alignment: Alignment.topRight,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color:
-                            Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: -8,
-                    right: -8,
-                    child: IconButton(
-                      icon: const Icon(Icons.edit, size: 14),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
-                      onPressed: onEdit,
-                      tooltip: 'Edit preset',
-                    ),
-                  ),
-                  Positioned(
-                    top: -8,
-                    left: -8,
-                    child: IconButton(
-                      icon: Icon(
-                        preset.isFavorite
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        size: 16,
-                        color: preset.isFavorite
-                            ? Colors.amber
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
-                      onPressed: onToggleFavorite,
-                      tooltip: preset.isFavorite
-                          ? 'Remove from overview'
-                          : 'Show on overview',
-                    ),
-                  ),
-                ],
+        child: Stack(
+          children: [
+            // Star (top-left)
+            Positioned(
+              top: 4,
+              left: 4,
+              child: IconButton(
+                icon: Icon(
+                  preset.isFavorite
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  size: 18,
+                  color: preset.isFavorite ? Colors.amber : fgDim,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
+                onPressed: onToggleFavorite,
+                tooltip: preset.isFavorite
+                    ? 'Remove from overview'
+                    : 'Show on overview',
               ),
-              const SizedBox(height: 4),
-              Text(
-                preset.name,
-                style: Theme.of(context).textTheme.labelSmall,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                textAlign: TextAlign.center,
+            ),
+            // Edit (top-right)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                icon: Icon(Icons.edit, size: 14, color: fgDim),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
+                onPressed: onEdit,
+                tooltip: 'Edit preset',
               ),
-              Text(
-                '${preset.brightness}%',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant,
+            ),
+            // Bottom bar: name + brightness
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(60),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        preset.name,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: fgColor,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${preset.brightness}%',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: fgDim,
+                          ),
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

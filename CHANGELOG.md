@@ -14,29 +14,49 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
-## [Development] (2026-05-03)
+## [Development] (2026-05-04)
 
 Added
 
-- **Favourite presets on overview** — up to 4 presets per device can be marked
+- **Favourite presets on overview** — up to 6 presets per device can be marked
   as favourites (star icon on each preset tile in the detail page). Favourited
-  presets appear as coloured squares inline on the overview device tile; tapping
-  one immediately applies that colour and brightness to the device. New
-  `isFavorite` field on `DevicePreset`, `toggleFavorite()` method, and
-  `deviceFavoritePresetsProvider` derived provider in `presets_provider.dart`.
+  presets appear as 32×32 coloured rounded squares inline on the overview device
+  tile; tapping one immediately applies that colour and brightness to the
+  device. New `isFavorite` field on `DevicePreset`, `toggleFavorite()` method,
+  `kMaxFavorites` constant, and `deviceFavoritePresetsProvider` derived provider
+  in `presets_provider.dart`.
 
-- **Device swatch icon** — the colour swatch on overview device tiles now
-  resembles the AL-1 product silhouette: a coloured rectangle (light head) with
-  a wider neutral base underneath, drawn in front with a slight overlap.
+- **AL-1 product silhouette swatch** — the colour swatch on both the overview
+  device tiles and the device detail page header now resembles the AL-1 product
+  silhouette: a coloured rectangle (light head, sharp bottom corners) with a
+  wider neutral base underneath, drawn in front with a slight overlap.
+
+- **Rounded square colour indicators** — all colour circles across the app
+  (LED controls preset dots, preset tile swatches, overview favourite presets)
+  have been changed to rounded squares for visual consistency.
 
 Changed
 
+- **Colour-dominant preset tiles** — preset tiles on the device detail page now
+  fill entirely with the preset colour. Name and brightness are shown on a
+  semi-transparent overlay bar at the bottom. Star and edit icons sit as small
+  overlays with contrast-aware colours (light icons on dark colours, dark icons
+  on light colours). Grid aspect ratio changed from 1.2 to 1.0 (square tiles).
+
 - **Responsive overview device tiles** — device tiles use a `LayoutBuilder`
-  with three breakpoints (520 / 350 px) to wrap content across 1, 2, or 3 rows
+  with three breakpoints (650 / 350 px) to wrap content across 1, 2, or 3 rows
   instead of truncating text with ellipsis. The chevron stays vertically
   centred across all rows. `_FavoritePresetsRow` uses `Wrap` so many presets
   flow to additional lines. `_StatusSummary` is wrapped in `Flexible` in
   wrapped layouts to prevent overflow into the chevron.
+
+- **Cleaner overview device tiles** — removed serial number, USB location, and
+  port path info from the overview text column. Only device name and device type
+  are shown (full details remain on the detail page).
+
+- **Stable status layout** — `_StatusSummary` now has a fixed width (110 px) so
+  changing brightness values (e.g. 9% → 100%) no longer shift the surrounding
+  layout.
 
 - **Status always visible** — removed the `isCompactWidth` check that hid
   `_StatusSummary` at narrow widths. Status (control mode + brightness) is now

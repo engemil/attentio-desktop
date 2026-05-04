@@ -252,7 +252,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
                     // Compact (< 350): three rows — text, presets, badge+status.
                     final w = constraints.maxWidth;
 
-                    if (w >= 520) {
+                    if (w >= 650) {
                       return Row(
                         children: [
                           _ColorSwatch(statusAsync: statusAsync),
@@ -409,27 +409,6 @@ class _DeviceTextColumn extends StatelessWidget {
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
-        Text(
-          'Serial Number: ${device.serial}',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        if (device.usbLocation != null)
-          Text(
-            'USB: ${device.usbLocation!}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        if (device.serialPort != null || device.protocolPort != null)
-          Text(
-            [
-              if (device.serialPort != null)
-                'Serial Data: ${device.serialPort!}',
-              if (device.protocolPort != null)
-                'Protocol: ${device.protocolPort!}',
-            ].join('  |  '),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
       ],
     );
   }
@@ -451,6 +430,7 @@ class _FavoritePresetsRow extends ConsumerWidget {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
+      clipBehavior: Clip.hardEdge,
       children: [
         for (final preset in favorites)
           _FavoritePresetDot(
@@ -502,11 +482,11 @@ class _FavoritePresetDot extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          width: 24,
-          height: 24,
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: Theme.of(context).colorScheme.outlineVariant,
               width: 1,
@@ -621,28 +601,33 @@ class _StatusSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return statusAsync.when(
-      loading: () => const SizedBox(
-        width: 16,
-        height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
+    return SizedBox(
+      width: 110,
+      child: statusAsync.when(
+        loading: () => const Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        error: (_, __) => const Icon(Icons.error_outline, color: Colors.redAccent),
+        data: (s) {
+          if (s == null) return const SizedBox.shrink();
+          final mode = s.controlMode == 0 ? 'Standalone' : 'Remote';
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(mode, style: Theme.of(context).textTheme.labelMedium),
+              Text(
+                'Brightness ${s.brightness}%',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          );
+        },
       ),
-      error: (_, __) => const Icon(Icons.error_outline, color: Colors.redAccent),
-      data: (s) {
-        if (s == null) return const SizedBox.shrink();
-        final mode = s.controlMode == 0 ? 'Standalone' : 'Remote';
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(mode, style: Theme.of(context).textTheme.labelMedium),
-            Text(
-              'Brightness ${s.brightness}%',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        );
-      },
     );
   }
 }
