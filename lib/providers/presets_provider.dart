@@ -10,7 +10,7 @@ const int kMaxPresets = 12;
 /// Maximum number of presets that can be marked as favourites.
 const int kMaxFavorites = 6;
 
-/// A single colour + brightness preset for an AL-1 device.
+/// A single colour + brightness preset for a device.
 @immutable
 class DevicePreset {
   final String name;
@@ -48,22 +48,22 @@ class DevicePreset {
   }
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'r': r,
-        'g': g,
-        'b': b,
-        'brightness': brightness,
-        'isFavorite': isFavorite,
-      };
+    'name': name,
+    'r': r,
+    'g': g,
+    'b': b,
+    'brightness': brightness,
+    'isFavorite': isFavorite,
+  };
 
   factory DevicePreset.fromJson(Map<String, dynamic> json) => DevicePreset(
-        name: json['name'] as String,
-        r: json['r'] as int,
-        g: json['g'] as int,
-        b: json['b'] as int,
-        brightness: json['brightness'] as int,
-        isFavorite: json['isFavorite'] as bool? ?? false,
-      );
+    name: json['name'] as String,
+    r: json['r'] as int,
+    g: json['g'] as int,
+    b: json['b'] as int,
+    brightness: json['brightness'] as int,
+    isFavorite: json['isFavorite'] as bool? ?? false,
+  );
 }
 
 /// SharedPreferences key for a device's presets list.
@@ -144,23 +144,24 @@ class DevicePresetsNotifier extends Notifier<List<DevicePreset>> {
       final currentCount = state.where((p) => p.isFavorite).length;
       if (currentCount >= kMaxFavorites) return false;
     }
-    state = [...state]..[index] = preset.copyWith(isFavorite: !preset.isFavorite);
+    state = [...state]
+      ..[index] = preset.copyWith(isFavorite: !preset.isFavorite);
     await _persist();
     return true;
   }
 }
 
 /// Per-device presets provider, keyed by serial number.
-final devicePresetsProvider = NotifierProvider.family<DevicePresetsNotifier,
-    List<DevicePreset>, String>(
-  (serial) => DevicePresetsNotifier(serial),
-);
+final devicePresetsProvider =
+    NotifierProvider.family<DevicePresetsNotifier, List<DevicePreset>, String>(
+      (serial) => DevicePresetsNotifier(serial),
+    );
 
 /// Derived provider returning only the favourite presets for a device.
 final deviceFavoritePresetsProvider =
     Provider.family<List<DevicePreset>, String>((ref, serial) {
-  return ref
-      .watch(devicePresetsProvider(serial))
-      .where((p) => p.isFavorite)
-      .toList();
-});
+      return ref
+          .watch(devicePresetsProvider(serial))
+          .where((p) => p.isFavorite)
+          .toList();
+    });

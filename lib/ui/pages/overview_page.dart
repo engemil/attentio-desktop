@@ -10,7 +10,7 @@ import 'package:attentio_desktop/ui/pages/settings_page.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 import 'package:attentio_desktop/providers/presets_provider.dart';
 
-/// Top-level status summary across all connected AL-1 devices.
+/// Top-level status summary across all connected devices.
 ///
 /// Read-only. Auto-refreshes via [devicesStreamProvider]. Per-device cards
 /// show a colour swatch derived from the live [DeviceStatus] stream.
@@ -45,17 +45,16 @@ class _OverviewBody extends ConsumerWidget {
     final settingsButton = AspectRatio(
       aspectRatio: 1,
       child: Card(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsPage(),
-              ),
-            );
-          },
-          child: const Center(
-            child: Icon(Icons.settings, size: 22),
+        child: Tooltip(
+          message: 'Settings',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SettingsPage()),
+              );
+            },
+            child: const Center(child: Icon(Icons.settings, size: 22)),
           ),
         ),
       ),
@@ -131,10 +130,7 @@ class _OverviewBody extends ConsumerWidget {
         const SizedBox(height: 12),
         Row(
           children: [
-            Text(
-              'Devices',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text('Devices', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(width: 8),
             _RefreshButton(),
           ],
@@ -144,12 +140,13 @@ class _OverviewBody extends ConsumerWidget {
           child: devices.isEmpty
               ? const Center(
                   child: Text(
-                    'No devices detected. Ensure your AL-1 is connected.',
+                    'No devices detected. Ensure your device(s) are connected.',
                   ),
                 )
               : Scrollbar(
                   thumbVisibility: true,
                   child: ListView.separated(
+                    primary: true,
                     itemCount: devices.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, i) =>
@@ -188,10 +185,12 @@ class _SummaryCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: Theme.of(context).textTheme.labelMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   Text(
                     value,
                     style: Theme.of(context).textTheme.headlineSmall,
@@ -316,7 +315,8 @@ class _OverviewDeviceTile extends ConsumerWidget {
                                   const SizedBox(width: 12),
                                   Flexible(
                                     child: _StatusSummary(
-                                        statusAsync: statusAsync),
+                                      statusAsync: statusAsync,
+                                    ),
                                   ),
                                 ],
                               ],
@@ -360,7 +360,8 @@ class _OverviewDeviceTile extends ConsumerWidget {
                                 const SizedBox(width: 12),
                                 Flexible(
                                   child: _StatusSummary(
-                                      statusAsync: statusAsync),
+                                    statusAsync: statusAsync,
+                                  ),
                                 ),
                               ],
                             ],
@@ -384,10 +385,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
 /// Device name, type, serial, USB location, and port info as a vertical
 /// text column. Extracted so it can be reused in both wide and narrow layouts.
 class _DeviceTextColumn extends StatelessWidget {
-  const _DeviceTextColumn({
-    required this.name,
-    required this.device,
-  });
+  const _DeviceTextColumn({required this.name, required this.device});
 
   final String name;
   final DeviceInfo device;
@@ -398,16 +396,13 @@ class _DeviceTextColumn extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          name,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
+        Text(name, style: Theme.of(context).textTheme.titleMedium),
         if (device.deviceType != null)
           Text(
             device.deviceType!,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
       ],
     );
@@ -417,10 +412,7 @@ class _DeviceTextColumn extends StatelessWidget {
 /// Row of up to 4 favourite preset squares shown on the overview device tile.
 /// Tapping a square immediately applies that preset to the device.
 class _FavoritePresetsRow extends ConsumerWidget {
-  const _FavoritePresetsRow({
-    required this.serial,
-    required this.favorites,
-  });
+  const _FavoritePresetsRow({required this.serial, required this.favorites});
 
   final String serial;
   final List<DevicePreset> favorites;
@@ -442,7 +434,10 @@ class _FavoritePresetsRow extends ConsumerWidget {
   }
 
   Future<void> _applyPreset(
-      BuildContext context, WidgetRef ref, DevicePreset preset) async {
+    BuildContext context,
+    WidgetRef ref,
+    DevicePreset preset,
+  ) async {
     try {
       await apiSetRgb(serial: serial, r: preset.r, g: preset.g, b: preset.b);
       await apiSetBrightness(serial: serial, brightness: preset.brightness);
@@ -456,19 +451,16 @@ class _FavoritePresetsRow extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to apply preset: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to apply preset: $e')));
       }
     }
   }
 }
 
 class _FavoritePresetDot extends StatelessWidget {
-  const _FavoritePresetDot({
-    required this.preset,
-    required this.onTap,
-  });
+  const _FavoritePresetDot({required this.preset, required this.onTap});
 
   final DevicePreset preset;
   final VoidCallback onTap;
@@ -529,9 +521,9 @@ class _ColorSwatch extends StatelessWidget {
               decoration: BoxDecoration(
                 color: color,
                 borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
-              ),
+                  topLeft: Radius.circular(8),
+                  topRight: Radius.circular(8),
+                ),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.outlineVariant,
                   width: 1,
@@ -611,7 +603,8 @@ class _StatusSummary extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         ),
-        error: (_, __) => const Icon(Icons.error_outline, color: Colors.redAccent),
+        error: (_, __) =>
+            const Icon(Icons.error_outline, color: Colors.redAccent),
         data: (s) {
           if (s == null) return const SizedBox.shrink();
           final mode = s.controlMode == 0 ? 'Standalone' : 'Remote';
@@ -655,8 +648,10 @@ class _RefreshButtonState extends ConsumerState<_RefreshButton> {
         if (mounted) setState(() => _secondsLeft = 0);
         return;
       }
-      final remaining =
-          fastUntil.difference(DateTime.now()).inSeconds.clamp(0, 15);
+      final remaining = fastUntil
+          .difference(DateTime.now())
+          .inSeconds
+          .clamp(0, 15);
       if (mounted) setState(() => _secondsLeft = remaining);
     });
   }

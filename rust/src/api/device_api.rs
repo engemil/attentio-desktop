@@ -241,7 +241,7 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
         .collect())
 }
 
-/// Queries the current status of an AL-1 device. If `serial` is `None`, the
+/// Queries the current status of a device. If `serial` is `None`, the
 /// first available device is used.
 pub async fn api_get_status(serial: Option<String>) -> Result<DeviceStatus> {
     with_client(serial, async |c| c.get_status().await).await.map(Into::into)

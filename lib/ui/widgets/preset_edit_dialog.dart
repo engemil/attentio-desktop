@@ -85,6 +85,7 @@ class _PresetEditDialogState extends State<PresetEditDialog> {
   Widget build(BuildContext context) {
     final previewColor = Color.fromARGB(255, _r.round(), _g.round(), _b.round());
     return AlertDialog(
+      actionsAlignment: _isEditing ? MainAxisAlignment.spaceBetween : MainAxisAlignment.end,
       title: Text(_isEditing ? 'Edit Preset' : 'Save as Preset'),
       content: SizedBox(
         width: 360,
@@ -153,7 +154,6 @@ class _PresetEditDialogState extends State<PresetEditDialog> {
             ),
             child: const Text('Delete'),
           ),
-        const Spacer(),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),

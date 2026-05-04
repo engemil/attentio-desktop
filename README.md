@@ -1,6 +1,6 @@
 # Attentio Desktop
 
-Attentio Desktop is a graphical user interface (GUI) for managing AttentioLight-1 (AL-1) devices. It is built using **Flutter** for a natively compiled frontend, and **Rust** for a high-performance, safe backend core. It heavily reuses the core logic of the [`attentio-cli`](github.com/engemil/attentio-cli) tool via [`flutter_rust_bridge`](https://github.com/fzyzcjy/flutter_rust_bridge).
+Attentio Desktop is a graphical user interface (GUI) for managing Attentio devices. It is built using **Flutter** for a natively compiled frontend, and **Rust** for a high-performance, safe backend core. It heavily reuses the core logic of the [`attentio-cli`](github.com/engemil/attentio-cli) tool via [`flutter_rust_bridge`](https://github.com/fzyzcjy/flutter_rust_bridge).
 
 > **Platform support:** Linux is the primary target and is actively tested. The `macos/` and `windows/` folders are scaffolded by Flutter but are **not yet officially supported** — expect rough edges if you try them.
 
@@ -139,7 +139,7 @@ Widget tests (fast, no hardware required):
 flutter test
 ```
 
-Integration tests (boots the real Rust bridge; works without an AL-1 attached — verifies either the device list or empty state renders):
+Integration tests (boots the real Rust bridge; works without a device attached — verifies either the device list or empty state renders):
 
 ```bash
 flutter test integration_test/simple_test.dart -d linux

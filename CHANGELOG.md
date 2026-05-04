@@ -16,6 +16,75 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ## [Development] (2026-05-04)
 
+Fixed
+
+- **Scrollbar crash on overview page** — the `Scrollbar` widget around the
+  device `ListView` had no `ScrollPosition` attached because the `ListView`
+  created its own `ScrollController` while the `Scrollbar` listened to the
+  `PrimaryScrollController`. Added `primary: true` to the `ListView` so both
+  use the same controller.
+
+- **Preset dialog crash at small window sizes** — the "Save as Preset" /
+  "Edit Preset" `AlertDialog` contained a `Spacer` (which extends `Expanded`)
+  inside the `actions` list. Flutter renders dialog actions inside an
+  `OverflowBar`, which does not accept `Expanded` children. Removed the
+  `Spacer` and set `actionsAlignment: MainAxisAlignment.spaceBetween` (when
+  editing) to keep the Delete button on the left and Cancel/Save on the right.
+
+- **Widget test failures** — two tests in `test/widget_test.dart` were
+  checking for UI text/widgets that no longer existed:
+  - "renders a card per returned device" expected `"Serial Number: SN-ABC"`
+    but the overview tile now shows the device display name. Updated test
+    devices to include `name` fields and asserts on those.
+  - "settings button is visible" expected `find.byTooltip('Settings')` but
+    the settings button had no `Tooltip`. Added a `Tooltip(message:
+    'Settings')` wrapper to the settings button in the overview page.
+
+- **Integration test stale strings** — `simple_test.dart` expected
+  `"Connected Devices"` and `"No devices found…"` but the overview page
+  shows `"Devices"` and `"No devices detected…"`. Updated test assertions
+  to match the current UI text.
+
+Changed
+
+- **Generalized product references** — replaced "AL-1"-specific wording
+  with generic "Attentio" / "device(s)" phrasing in the overview empty-state
+  message, doc comments, and `pubspec.yaml` description.
+
+- **Code formatting** — applied `dart format` across the codebase for
+  consistent style (line wrapping, trailing commas, parameter alignment).
+
+- **Preset grid responsiveness** — the preset grid on the device detail page
+  now uses more breakpoints (3 / 4 / 5 / 6 columns) instead of a fixed
+  3-or-4 split.
+
+- **Preset tile touch targets** — increased star and edit icon sizes and
+  minimum touch targets (18 px / 14 px icons with 24 px targets to 22 px /
+  18 px icons with 28 px targets) for easier interaction.
+
+- **Preset tile label style** — preset name and brightness labels changed
+  from `labelSmall` to `bodySmall` for readability.
+
+- **Detail page status header breakpoint** — raised from 640 px to 750 px
+  so the stacked layout activates before content overflows.
+
+- **Detail page identity block** — removed the lightbulb icon from the
+  product silhouette head, removed `overflow: TextOverflow.ellipsis` and
+  `maxLines: 1` constraints from the serial number and port info lines
+  (they are now fully visible / selectable).
+
+- **Live status block** — centred the "Live Status" title, set label text
+  to `textAlign: TextAlign.right`, and wrapped value widgets in `Flexible`
+  to prevent overflow.
+
+- **FRB codegen config** — added `enable_lifetime: true` to
+  `flutter_rust_bridge.yaml` to suppress the informational lifetime
+  warning during code generation.
+
+---
+
+## [Development] (2026-05-04)
+
 Added
 
 - **Favourite presets on overview** — up to 6 presets per device can be marked

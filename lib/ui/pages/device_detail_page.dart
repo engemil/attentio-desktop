@@ -12,13 +12,7 @@ import 'package:attentio_desktop/providers/presets_provider.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
 const _controlModeNames = ['STANDALONE', 'REMOTE'];
-const _systemStateNames = [
-  'BOOT',
-  'POWERUP',
-  'ACTIVE',
-  'POWERDOWN',
-  'OFF',
-];
+const _systemStateNames = ['BOOT', 'POWERUP', 'ACTIVE', 'POWERDOWN', 'OFF'];
 const _standaloneModeNames = [
   'Solid Color',
   'Brightness',
@@ -36,7 +30,7 @@ String _nameAt(List<String> names, int i) =>
 /// Width threshold (in logical pixels) at which the status header switches
 /// from a stacked layout (identity above, status below) to a side-by-side
 /// layout (identity left, status grid right).
-const double _kStatusHeaderWideBreakpoint = 640;
+const double _kStatusHeaderWideBreakpoint = 750;
 
 /// Full-screen per-device control panel.
 class DeviceDetailPage extends ConsumerStatefulWidget {
@@ -60,17 +54,17 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     try {
       await action();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMsg)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMsg)));
       }
       // Kick the live status stream to reflect changes quickly.
       ref.invalidate(deviceStatusStreamProvider(_serial));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -83,13 +77,15 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     // (e.g. after a rename). Fall back to the static widget.device if the
     // device disappears from the stream momentarily.
     final devicesAsync = ref.watch(devicesStreamProvider);
-    final device = devicesAsync.whenData((devices) {
-      try {
-        return devices.firstWhere((d) => d.serial == _serial);
-      } catch (_) {
-        return widget.device;
-      }
-    }).value ?? widget.device;
+    final device =
+        devicesAsync.whenData((devices) {
+          try {
+            return devices.firstWhere((d) => d.serial == _serial);
+          } catch (_) {
+            return widget.device;
+          }
+        }).value ??
+        widget.device;
 
     final isNormal = device.mode == 'Normal';
     // Only watch the status stream when in normal mode. The provider yields
@@ -103,9 +99,7 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     final displayName = deviceDisplayName(device);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(displayName),
-      ),
+      appBar: AppBar(title: Text(displayName)),
       body: AbsorbPointer(
         absorbing: _busy,
         child: ListView(
@@ -125,25 +119,21 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
               )
             else ...[
               _QuickActionsCard(
-                onClaim: () =>
-                    _run(() => apiClaim(serial: _serial), 'Claimed'),
+                onClaim: () => _run(() => apiClaim(serial: _serial), 'Claimed'),
                 onRelease: () =>
                     _run(() => apiRelease(serial: _serial), 'Released'),
-                onPowerOn: () => _run(
-                    () => apiPowerOn(serial: _serial), 'Power on'),
-                onPowerOff: () => _run(
-                    () => apiPowerOff(serial: _serial), 'Power off'),
-                onPing: () => _run(
-                  () async {
-                    final ms = await apiPing(serial: _serial);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Ping: ${ms}ms')),
-                      );
-                    }
-                  },
-                  'Ping OK',
-                ),
+                onPowerOn: () =>
+                    _run(() => apiPowerOn(serial: _serial), 'Power on'),
+                onPowerOff: () =>
+                    _run(() => apiPowerOff(serial: _serial), 'Power off'),
+                onPing: () => _run(() async {
+                  final ms = await apiPing(serial: _serial);
+                  if (mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('Ping: ${ms}ms')));
+                  }
+                }, 'Ping OK'),
               ),
               const SizedBox(height: 16),
               _ControlsCard(
@@ -167,7 +157,9 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                 ),
                 onSetBrightness: () => _run(
                   () => apiSetBrightness(
-                      serial: _serial, brightness: _brightness.round()),
+                    serial: _serial,
+                    brightness: _brightness.round(),
+                  ),
                   'Brightness applied',
                 ),
               ),
@@ -182,24 +174,25 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                 onApplyPreset: (preset) async {
                   setState(() {
                     _pickedColor = Color.fromARGB(
-                        255, preset.r, preset.g, preset.b);
+                      255,
+                      preset.r,
+                      preset.g,
+                      preset.b,
+                    );
                     _brightness = preset.brightness.toDouble();
                   });
-                  await _run(
-                    () async {
-                      await apiSetRgb(
-                        serial: _serial,
-                        r: preset.r,
-                        g: preset.g,
-                        b: preset.b,
-                      );
-                      await apiSetBrightness(
-                        serial: _serial,
-                        brightness: preset.brightness,
-                      );
-                    },
-                    'Preset "${preset.name}" applied',
-                  );
+                  await _run(() async {
+                    await apiSetRgb(
+                      serial: _serial,
+                      r: preset.r,
+                      g: preset.g,
+                      b: preset.b,
+                    );
+                    await apiSetBrightness(
+                      serial: _serial,
+                      brightness: preset.brightness,
+                    );
+                  }, 'Preset "${preset.name}" applied');
                 },
               ),
               const SizedBox(height: 16),
@@ -300,27 +293,26 @@ class _IdentityBlock extends ConsumerWidget {
     controller.dispose();
     if (newName == null) return;
     try {
-      await apiRenameDevice(
-        serial: device.serial,
-        name: newName,
-      );
+      await apiRenameDevice(serial: device.serial, name: newName);
       // Refresh device discovery and settings so the name updates everywhere.
       ref.invalidate(devicesStreamProvider);
       ref.invalidate(deviceSettingsProvider(device.serial));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newName.isEmpty
-                ? 'Device name cleared'
-                : 'Device renamed to "$newName"'),
+            content: Text(
+              newName.isEmpty
+                  ? 'Device name cleared'
+                  : 'Device renamed to "$newName"',
+            ),
           ),
         );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -331,7 +323,7 @@ class _IdentityBlock extends ConsumerWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // AL-1 product silhouette: light head + base.
+        // AttentioLight product silhouette: light head + base.
         SizedBox(
           width: 88,
           height: 72,
@@ -351,10 +343,9 @@ class _IdentityBlock extends ConsumerWidget {
                       topRight: Radius.circular(14),
                     ),
                     border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant),
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
-                  child: const Icon(Icons.lightbulb,
-                      size: 36, color: Colors.white70),
                 ),
               ),
               // Base (in front, at bottom)
@@ -365,10 +356,13 @@ class _IdentityBlock extends ConsumerWidget {
                   width: 88,
                   height: 22,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant),
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
                   ),
                 ),
               ),
@@ -409,33 +403,27 @@ class _IdentityBlock extends ConsumerWidget {
                 Text(
                   device.deviceType!,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                  overflow: TextOverflow.ellipsis,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               SelectableText(
                 'Serial Number: ${device.serial}',
                 style: Theme.of(context).textTheme.bodyMedium,
-                maxLines: 1,
               ),
               if (device.usbLocation != null)
                 Text(
                   'USB: ${device.usbLocation!}',
                   style: Theme.of(context).textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
                 ),
               if (device.serialPort != null)
                 Text(
                   'Serial Data Port: ${device.serialPort!}',
                   style: Theme.of(context).textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
                 ),
               if (device.protocolPort != null)
                 Text(
                   'Protocol Port: ${device.protocolPort!}',
                   style: Theme.of(context).textTheme.bodySmall,
-                  overflow: TextOverflow.ellipsis,
                 ),
             ],
           ),
@@ -453,10 +441,13 @@ class _LiveStatusBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Live Status',
-            style: Theme.of(context).textTheme.titleMedium),
+        Text(
+          'Live Status',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         const SizedBox(height: 12),
         statusAsync.when(
           loading: () => const Padding(
@@ -468,39 +459,77 @@ class _LiveStatusBlock extends StatelessWidget {
             final claimed = s.controlMode == 1; // 1 = REMOTE
             final iface = _nameAt(_interfaceNames, s.activeController);
             final rows = <MapEntry<String, Widget>>[
-              MapEntry('Claimed', _ClaimChip(
-                claimed: claimed,
-                iface: iface,
-                sessionId: s.sessionId,
-              )),
-              MapEntry('System state',
-                  Text(_nameAt(_systemStateNames, s.systemState),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Control mode',
-                  Text(_nameAt(_controlModeNames, s.controlMode),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Active controller',
-                  Text(iface,
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Standalone mode',
-                  Text(_nameAt(_standaloneModeNames, s.standaloneMode),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Current colour (R, G, B)',
-                  Text('(${s.currentR}, ${s.currentG}, ${s.currentB})',
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Brightness',
-                  Text('${s.brightness}%',
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
-              MapEntry('Session ID',
-                  Text(s.sessionId.toString(),
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()]))),
+              MapEntry(
+                'Claimed',
+                _ClaimChip(
+                  claimed: claimed,
+                  iface: iface,
+                  sessionId: s.sessionId,
+                ),
+              ),
+              MapEntry(
+                'System state',
+                Text(
+                  _nameAt(_systemStateNames, s.systemState),
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Control mode',
+                Text(
+                  _nameAt(_controlModeNames, s.controlMode),
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Active controller',
+                Text(
+                  iface,
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Standalone mode',
+                Text(
+                  _nameAt(_standaloneModeNames, s.standaloneMode),
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Current colour (R, G, B)',
+                Text(
+                  '(${s.currentR}, ${s.currentG}, ${s.currentB})',
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Brightness',
+                Text(
+                  '${s.brightness}%',
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              MapEntry(
+                'Session ID',
+                Text(
+                  s.sessionId.toString(),
+                  style: const TextStyle(
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
             ];
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -514,18 +543,17 @@ class _LiveStatusBlock extends StatelessWidget {
                         Expanded(
                           child: Text(
                             r.key,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
+                            textAlign: TextAlign.right,
+                            style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        r.value,
+                        Flexible(child: r.value),
                       ],
                     ),
                   ),
@@ -679,8 +707,7 @@ class _QuickActionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Controls',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text('Controls', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -703,11 +730,7 @@ class _QuickActionsCard extends StatelessWidget {
                         children: [powerOnBtn, powerOffBtn],
                       ),
                       const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [pingBtn],
-                      ),
+                      Wrap(spacing: 12, runSpacing: 12, children: [pingBtn]),
                     ],
                   );
                 }
@@ -776,8 +799,10 @@ class _ControlsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('LED Controls',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'LED Controls',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 12),
             const Text('Colour'),
             const SizedBox(height: 8),
@@ -799,42 +824,48 @@ class _ControlsCard extends StatelessWidget {
               label: 'R',
               // ignore: deprecated_member_use
               value: pickedColor.red.toDouble(),
-              onChanged: (v) => onColorChanged(Color.fromARGB(
-                255,
-                v.round(),
-                // ignore: deprecated_member_use
-                pickedColor.green,
-                // ignore: deprecated_member_use
-                pickedColor.blue,
-              )),
+              onChanged: (v) => onColorChanged(
+                Color.fromARGB(
+                  255,
+                  v.round(),
+                  // ignore: deprecated_member_use
+                  pickedColor.green,
+                  // ignore: deprecated_member_use
+                  pickedColor.blue,
+                ),
+              ),
               activeColor: Colors.red,
             ),
             _ColorChannelSlider(
               label: 'G',
               // ignore: deprecated_member_use
               value: pickedColor.green.toDouble(),
-              onChanged: (v) => onColorChanged(Color.fromARGB(
-                255,
-                // ignore: deprecated_member_use
-                pickedColor.red,
-                v.round(),
-                // ignore: deprecated_member_use
-                pickedColor.blue,
-              )),
+              onChanged: (v) => onColorChanged(
+                Color.fromARGB(
+                  255,
+                  // ignore: deprecated_member_use
+                  pickedColor.red,
+                  v.round(),
+                  // ignore: deprecated_member_use
+                  pickedColor.blue,
+                ),
+              ),
               activeColor: Colors.green,
             ),
             _ColorChannelSlider(
               label: 'B',
               // ignore: deprecated_member_use
               value: pickedColor.blue.toDouble(),
-              onChanged: (v) => onColorChanged(Color.fromARGB(
-                255,
-                // ignore: deprecated_member_use
-                pickedColor.red,
-                // ignore: deprecated_member_use
-                pickedColor.green,
-                v.round(),
-              )),
+              onChanged: (v) => onColorChanged(
+                Color.fromARGB(
+                  255,
+                  // ignore: deprecated_member_use
+                  pickedColor.red,
+                  // ignore: deprecated_member_use
+                  pickedColor.green,
+                  v.round(),
+                ),
+              ),
               activeColor: Colors.blue,
             ),
             const SizedBox(height: 8),
@@ -849,9 +880,8 @@ class _ControlsCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: pickedColor,
                         border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .outlineVariant),
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),
@@ -887,10 +917,7 @@ class _ControlsCard extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: swatchAndHex,
-                    ),
+                    Align(alignment: Alignment.centerLeft, child: swatchAndHex),
                     const SizedBox(height: 8),
                     ledOffBtn,
                     const SizedBox(height: 8),
@@ -1025,27 +1052,37 @@ class _PresetsCard extends ConsumerWidget {
       ),
     );
     if (result is DevicePreset) {
-      final added =
-          await ref.read(devicePresetsProvider(serial).notifier).addPreset(result);
+      final added = await ref
+          .read(devicePresetsProvider(serial).notifier)
+          .addPreset(result);
       if (!added && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('Maximum of $kMaxPresets presets reached.')),
+            content: Text('Maximum of $kMaxPresets presets reached.'),
+          ),
         );
       }
     }
   }
 
   Future<void> _editPreset(
-      BuildContext context, WidgetRef ref, int index, DevicePreset preset) async {
+    BuildContext context,
+    WidgetRef ref,
+    int index,
+    DevicePreset preset,
+  ) async {
     final result = await showDialog<Object?>(
       context: context,
       builder: (_) => PresetEditDialog(existing: preset, index: index),
     );
     if (result is PresetDeleteSentinel) {
-      await ref.read(devicePresetsProvider(serial).notifier).removePreset(index);
+      await ref
+          .read(devicePresetsProvider(serial).notifier)
+          .removePreset(index);
     } else if (result is DevicePreset) {
-      await ref.read(devicePresetsProvider(serial).notifier).updatePreset(index, result);
+      await ref
+          .read(devicePresetsProvider(serial).notifier)
+          .updatePreset(index, result);
     }
   }
 
@@ -1077,7 +1114,8 @@ class _PresetsCard extends ConsumerWidget {
 
     final result = await FilePicker.platform.saveFile(
       dialogTitle: 'Export Device Configuration',
-      fileName: 'attentio_${serial.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json',
+      fileName:
+          'attentio_${serial.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}.json',
       type: FileType.custom,
       allowedExtensions: ['json'],
     );
@@ -1103,7 +1141,8 @@ class _PresetsCard extends ConsumerWidget {
 
     Map<String, dynamic> config;
     try {
-      config = jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+      config =
+          jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1116,7 +1155,8 @@ class _PresetsCard extends ConsumerWidget {
     final fileSerial = config['serial'] as String?;
     final fileDeviceName = config['device_name'] as String?;
     final presetsJson = config['presets'] as List<dynamic>?;
-    final presets = presetsJson
+    final presets =
+        presetsJson
             ?.map((e) => DevicePreset.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
@@ -1124,11 +1164,13 @@ class _PresetsCard extends ConsumerWidget {
     // Build a confirmation message.
     String message;
     if (fileSerial == serial) {
-      message = 'Load configuration for "$deviceName"?\n\n'
+      message =
+          'Load configuration for "$deviceName"?\n\n'
           'This will overwrite the current ${ref.read(devicePresetsProvider(serial)).length} preset(s) '
           'with ${presets.length} preset(s) from the file.';
     } else {
-      message = 'This configuration was saved for device '
+      message =
+          'This configuration was saved for device '
           '"${fileDeviceName ?? fileSerial ?? 'Unknown'}" '
           '(serial: ${fileSerial ?? 'unknown'}).\n\n'
           'Load it onto "$deviceName" (serial: $serial) instead?\n\n'
@@ -1192,8 +1234,7 @@ class _PresetsCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('Presets',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text('Presets', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 IconButton(
                   tooltip: 'Import configuration',
@@ -1215,15 +1256,21 @@ class _PresetsCard extends ConsumerWidget {
                   'No presets yet. Use "Save as Preset" to capture the '
                   'current colour and brightness.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color:
-                            Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               )
             else
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final crossCount = constraints.maxWidth >= 480 ? 4 : 3;
+                  final w = constraints.maxWidth;
+                  final crossCount = w >= 800
+                      ? 6
+                      : w >= 600
+                      ? 5
+                      : w >= 400
+                      ? 4
+                      : 3;
                   return GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -1250,7 +1297,8 @@ class _PresetsCard extends ConsumerWidget {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                    'Maximum of $kMaxFavorites favourites reached.'),
+                                  'Maximum of $kMaxFavorites favourites reached.',
+                                ),
                               ),
                             );
                           }
@@ -1317,14 +1365,11 @@ class _PresetTile extends StatelessWidget {
                   preset.isFavorite
                       ? Icons.star_rounded
                       : Icons.star_outline_rounded,
-                  size: 18,
+                  size: 22,
                   color: preset.isFavorite ? Colors.amber : fgDim,
                 ),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 24,
-                  minHeight: 24,
-                ),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onToggleFavorite,
                 tooltip: preset.isFavorite
                     ? 'Remove from overview'
@@ -1336,12 +1381,9 @@ class _PresetTile extends StatelessWidget {
               top: 4,
               right: 4,
               child: IconButton(
-                icon: Icon(Icons.edit, size: 14, color: fgDim),
+                icon: Icon(Icons.edit, size: 18, color: fgDim),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 24,
-                  minHeight: 24,
-                ),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onEdit,
                 tooltip: 'Edit preset',
               ),
@@ -1352,8 +1394,7 @@ class _PresetTile extends StatelessWidget {
               right: 0,
               bottom: 0,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.black.withAlpha(60),
                   borderRadius: const BorderRadius.only(
@@ -1366,9 +1407,9 @@ class _PresetTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         preset.name,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: fgColor,
-                            ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: fgColor),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -1376,9 +1417,9 @@ class _PresetTile extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       '${preset.brightness}%',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: fgDim,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: fgDim),
                     ),
                   ],
                 ),
@@ -1407,8 +1448,10 @@ class _MetadataCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('Metadata',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Metadata',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: 'Refresh',
@@ -1450,8 +1493,10 @@ class _DeviceSettingsCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Text('Log Level Setting',
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  'Log Level Setting',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 IconButton(
                   tooltip: 'Refresh',
@@ -1469,24 +1514,25 @@ class _DeviceSettingsCard extends ConsumerWidget {
               ),
               error: (e, _) => Text('Error: $e'),
               data: (entries) => _EditableKvList(
-                entries: entries
-                    .where((e) => e.key != 'device_name')
-                    .toList(),
+                entries: entries.where((e) => e.key != 'device_name').toList(),
                 onSave: (key, value) async {
                   try {
                     await apiSettingsSet(
-                        serial: serial, key: key, value: value);
+                      serial: serial,
+                      key: key,
+                      value: value,
+                    );
                     ref.invalidate(deviceSettingsProvider(serial));
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Saved $key')),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Saved $key')));
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $e')),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
                     }
                   }
                 },
@@ -1521,7 +1567,8 @@ class _KvTable extends StatelessWidget {
                   child: SelectableText(
                     e.value,
                     style: const TextStyle(
-                        fontFeatures: [FontFeature.tabularFigures()]),
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ],
@@ -1600,10 +1647,8 @@ class _EditableKvListState extends State<_EditableKvList> {
                 IconButton(
                   tooltip: 'Save',
                   icon: const Icon(Icons.save),
-                  onPressed: () => widget.onSave(
-                    e.key,
-                    _controllers[e.key]!.text,
-                  ),
+                  onPressed: () =>
+                      widget.onSave(e.key, _controllers[e.key]!.text),
                 ),
               ],
             ),

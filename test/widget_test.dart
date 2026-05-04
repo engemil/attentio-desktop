@@ -10,10 +10,7 @@ import 'package:attentio_desktop/src/rust/api/device_api.dart';
 /// Wraps [child] in a [ProviderScope] + [MaterialApp] with the given Riverpod
 /// overrides so widget tests can exercise the UI without hitting the real
 /// Rust bridge.
-Widget _harness({
-  required Widget child,
-  List<Object> overrides = const [],
-}) {
+Widget _harness({required Widget child, List<Object> overrides = const []}) {
   return ProviderScope(
     overrides: overrides.cast(),
     child: MaterialApp(home: child),
@@ -22,13 +19,15 @@ Widget _harness({
 
 void main() {
   group('OverviewPage', () {
-    testWidgets('shows empty-state text when no devices are returned',
-        (tester) async {
+    testWidgets('shows empty-state text when no devices are returned', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _harness(
           overrides: [
             devicesStreamProvider.overrideWith(
-                (ref) => Stream<List<DeviceInfo>>.value(const [])),
+              (ref) => Stream<List<DeviceInfo>>.value(const []),
+            ),
           ],
           child: const OverviewPage(),
         ),
@@ -37,7 +36,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text('No devices detected. Ensure your AL-1 is connected.'),
+        find.text('No devices detected. Ensure your device(s) are connected.'),
         findsOneWidget,
       );
     });
@@ -48,8 +47,16 @@ void main() {
           overrides: [
             devicesStreamProvider.overrideWith(
               (ref) => Stream<List<DeviceInfo>>.value(const [
-                DeviceInfo(serial: 'SN-ABC', mode: 'Normal'),
-                DeviceInfo(serial: 'SN-DEF', mode: 'Normal'),
+                DeviceInfo(
+                  serial: 'SN-ABC',
+                  mode: 'Normal',
+                  name: 'Desk Light',
+                ),
+                DeviceInfo(
+                  serial: 'SN-DEF',
+                  mode: 'Normal',
+                  name: 'Monitor Light',
+                ),
               ]),
             ),
           ],
@@ -58,8 +65,8 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Serial Number: SN-ABC'), findsOneWidget);
-      expect(find.text('Serial Number: SN-DEF'), findsOneWidget);
+      expect(find.text('Desk Light'), findsOneWidget);
+      expect(find.text('Monitor Light'), findsOneWidget);
     });
 
     testWidgets('settings button is visible', (tester) async {
@@ -67,7 +74,8 @@ void main() {
         _harness(
           overrides: [
             devicesStreamProvider.overrideWith(
-                (ref) => Stream<List<DeviceInfo>>.value(const [])),
+              (ref) => Stream<List<DeviceInfo>>.value(const []),
+            ),
           ],
           child: const OverviewPage(),
         ),
@@ -84,7 +92,8 @@ void main() {
         _harness(
           overrides: [
             devicesStreamProvider.overrideWith(
-                (ref) => Stream<List<DeviceInfo>>.value(const [])),
+              (ref) => Stream<List<DeviceInfo>>.value(const []),
+            ),
           ],
           child: const AppShell(),
         ),
