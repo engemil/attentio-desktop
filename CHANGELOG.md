@@ -14,6 +14,59 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-07)
+
+Added
+
+- **Monitor page (`lib/ui/pages/monitor_page.dart`)** — new full-screen
+  two-pane view for real-time device monitoring:
+  - **Protocol pane (CDC1, top):** AP command/response traffic with syntax
+    colouring (outgoing → blue, OK ← green, ERROR ← red, events ← amber).
+    Connection status dot, clear button, auto-scroll toggle.
+  - **Serial pane (CDC0, bottom):** raw serial debug output streamed from the
+    device. Same controls as the protocol pane.
+  - **Log level control** in the app bar: `SegmentedButton` (ERROR / WARN /
+    INFO / DEBUG) wired to `LOG_SET_LEVEL` AP command. Keyboard shortcuts
+    `1`–`4` also set the level.
+  - **Status bar** shows device serial, current log level, pane focus, and
+    line counts.
+  - **Keyboard navigation:** `Tab` toggles pane focus; `↑↓` / `PgUp/PgDn` scroll
+    the focused pane; `1`–`4` change log level.
+
+- **Monitor Rust bridge (`rust/src/api/monitor_api.rs`)** — new FFI surface
+  for the desktop app:
+  - `api_monitor_serial_start(serial)` — opens CDC0 and streams lines to Dart
+    via `StreamSink`. Auto-reconnects on port busy / disconnect with 3 s
+    backoff; uses a 1 s read timeout to detect stream cancellation promptly.
+  - `api_monitor_protocol_start(serial)` — subscribes to the shared
+    `ApClient` broadcast channel and streams formatted AP packets to Dart.
+    Creates the `ApClient` lazily if no command has been issued yet, so the
+    monitor is live as soon as the page opens.
+  - `api_monitor_get_log_level(serial)` / `api_monitor_set_log_level(serial, level)` —
+    runtime log level queries and changes (level 0–4).
+  - `MonitorLogLevel` struct returned to Dart with `level` and `name` fields.
+
+- **Monitor Riverpod providers (`lib/providers/monitor_providers.dart`)** —
+  `serialMonitorStreamProvider(serial)` and `protocolMonitorStreamProvider(serial)`
+  wrapping the FRB stream functions.
+
+- **`slot_for` / `resolve_serial` made `pub(crate)`** in `device_api.rs` so
+  `monitor_api.rs` can reach the shared `ApClient` cache and serial resolver.
+
+Changed
+
+- **Device Settings card restructured** — "Log Level Setting" renamed to
+  "Serial Logging and Monitoring"; the monitor `IconButton` moved from the
+  app bar into a new "Open Monitor" `FilledButton.icon` inside the card;
+  a `Divider` + "Settings" subheading separates the button from the key-value
+  settings editor below it.
+
+- **`_DeviceSettingsCard` now takes `device: DeviceInfo`** — the card
+  derives the display name internally for the `MonitorPage` navigation,
+  removing the need for the caller to pass it separately.
+
+---
+
 ## [Development] (2026-05-04)
 
 Fixed

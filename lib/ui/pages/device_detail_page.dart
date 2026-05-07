@@ -10,6 +10,7 @@ import 'package:attentio_desktop/providers/devices_providers.dart';
 import 'package:attentio_desktop/ui/widgets/preset_edit_dialog.dart';
 import 'package:attentio_desktop/providers/presets_provider.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
+import 'package:attentio_desktop/ui/pages/monitor_page.dart';
 
 const _controlModeNames = ['STANDALONE', 'REMOTE'];
 const _systemStateNames = ['BOOT', 'POWERUP', 'ACTIVE', 'POWERDOWN', 'OFF'];
@@ -99,7 +100,9 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     final displayName = deviceDisplayName(device);
 
     return Scaffold(
-      appBar: AppBar(title: Text(displayName)),
+      appBar: AppBar(
+        title: Text(displayName),
+      ),
       body: AbsorbPointer(
         absorbing: _busy,
         child: ListView(
@@ -196,7 +199,7 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                 },
               ),
               const SizedBox(height: 16),
-              _DeviceSettingsCard(serial: _serial),
+              _DeviceSettingsCard(serial: _serial, device: device),
               const SizedBox(height: 16),
               _MetadataCard(serial: _serial),
             ],
@@ -1478,13 +1481,15 @@ class _MetadataCard extends ConsumerWidget {
 }
 
 class _DeviceSettingsCard extends ConsumerWidget {
-  const _DeviceSettingsCard({required this.serial});
+  const _DeviceSettingsCard({required this.serial, required this.device});
 
   final String serial;
+  final DeviceInfo device;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settingsAsync = ref.watch(deviceSettingsProvider(serial));
+    final displayName = deviceDisplayName(device);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -1494,7 +1499,7 @@ class _DeviceSettingsCard extends ConsumerWidget {
             Row(
               children: [
                 Text(
-                  'Log Level Setting',
+                  'Serial Logging and Monitoring',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const Spacer(),
@@ -1507,6 +1512,28 @@ class _DeviceSettingsCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => MonitorPage(
+                      serial: serial,
+                      deviceName: displayName,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.terminal),
+              label: const Text('Open Monitor'),
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Text(
+              'Settings',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
             settingsAsync.when(
               loading: () => const Padding(
                 padding: EdgeInsets.all(16),

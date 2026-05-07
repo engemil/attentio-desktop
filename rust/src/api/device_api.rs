@@ -116,7 +116,7 @@ fn mode_string(m: DeviceMode) -> String {
 
 type SharedSlot = Arc<AsyncMutex<Option<ApClient>>>;
 
-fn slot_for(serial: &str) -> SharedSlot {
+pub(crate) fn slot_for(serial: &str) -> SharedSlot {
     static MAP: OnceLock<StdMutex<HashMap<String, SharedSlot>>> = OnceLock::new();
     let map = MAP.get_or_init(|| StdMutex::new(HashMap::new()));
     let mut guard = map.lock().expect("device-cache map poisoned");
@@ -127,7 +127,7 @@ fn slot_for(serial: &str) -> SharedSlot {
 }
 
 /// Resolve `serial = None` to the serial of the first available device.
-async fn resolve_serial(serial: Option<String>) -> Result<String> {
+pub(crate) async fn resolve_serial(serial: Option<String>) -> Result<String> {
     if let Some(s) = serial {
         return Ok(s);
     }
@@ -204,6 +204,14 @@ where
     } else {
         Err(anyhow::anyhow!(first_err))
     }
+}
+
+/// Crate-visible alias of [`with_client`] for use by other API modules.
+pub(crate) async fn with_client_pub<F, T>(serial: Option<String>, op: F) -> Result<T>
+where
+    F: for<'a> AsyncFn(&'a mut ApClient) -> Result<T, AttentioError>,
+{
+    with_client(serial, op).await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
