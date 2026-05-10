@@ -14,6 +14,47 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-10)
+
+Fixed
+
+- **Spurious `Fail to post message to Dart` warnings on every device action** —
+  the device detail page invalidated `deviceStatusStreamProvider` after every
+  claim / release / set-RGB / set-brightness / etc. action to refresh the UI
+  promptly. Each invalidation tore down and respawned the underlying Rust
+  streaming task, and the dropped `StreamSinkCloser` raced with Dart receive-
+  port disposal, producing one warning from `flutter_rust_bridge` per action
+  (visible on stderr because we install `env_logger` at `warn` level on
+  Linux).
+
+  Replaced the invalidate with a kick mechanism: a per-serial
+  `tokio::sync::Notify` is awaited alongside the 2 s poll sleep via
+  `tokio::select!`, and a new sync API `api_device_status_kick(serial)` calls
+  `notify_one()` to wake the loop immediately. The stream task stays alive
+  across the entire device-detail page session, no close-sentinel is posted,
+  and status updates remain instant after each action.
+
+  Verified end-to-end: 8 consecutive actions on a device produced 8 kick
+  events and zero stream-task exits / FRB warnings.
+
+Changed
+
+- **`frb_diag:` lifecycle logs demoted from `debug` to `trace`** in
+  `device_api.rs` and `monitor_api.rs`. They served their diagnostic purpose
+  during the warning investigation; the default `RUST_LOG=warn` hides them
+  either way. To re-enable for future diagnostics, run with
+  `RUST_LOG=warn,rust_lib_attentio_desktop=trace`.
+
+Added
+
+- **`api_device_status_kick(serial)`** — sync FRB API in
+  `rust/src/api/device_api.rs`. Wakes the per-serial device-status poll loop
+  so it issues a fresh `get_status()` immediately rather than waiting for the
+  next 2 s tick. Edge-triggered via `tokio::sync::Notify`; safe to call
+  before a stream is subscribed (the first tick is immediate anyway).
+
+---
+
 ## [Development] (2026-05-07)
 
 Added

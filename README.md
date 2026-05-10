@@ -13,6 +13,7 @@ Attentio Desktop is a graphical user interface (GUI) for managing Attentio devic
 - [Setup](#setup)
 - [Development](#development)
 - [Testing](#testing)
+- [Logging & Diagnostics](#logging--diagnostics)
 - [Building for Release](#building-for-release)
 - [License](#license)
 
@@ -143,6 +144,26 @@ Integration tests (boots the real Rust bridge; works without a device attached â
 
 ```bash
 flutter test integration_test/simple_test.dart -d linux
+```
+
+## Logging & Diagnostics
+
+The Rust backend uses `env_logger`, controlled at runtime via `RUST_LOG`. The
+default filter is `warn`, so only warnings and errors are printed.
+
+A small number of `flutter_rust_bridge` internal warnings (e.g. `Fail to post
+message to Dart`) can occasionally surface during stream teardown on app
+shutdown or USB unplug. They are cosmetic. To silence them while keeping
+your own backend warnings visible:
+
+```bash
+RUST_LOG=warn,flutter_rust_bridge::rust2dart=error flutter run -d linux
+```
+
+To enable verbose stream-lifecycle traces (`frb_diag:` events) for debugging:
+
+```bash
+RUST_LOG=warn,rust_lib_attentio_desktop=trace flutter run -d linux
 ```
 
 ## Building for Release

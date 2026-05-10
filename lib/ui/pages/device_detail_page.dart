@@ -60,7 +60,14 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
         ).showSnackBar(SnackBar(content: Text(successMsg)));
       }
       // Kick the live status stream to reflect changes quickly.
-      ref.invalidate(deviceStatusStreamProvider(_serial));
+      // We do NOT use `ref.invalidate(deviceStatusStreamProvider(_serial))`
+      // here: invalidating a stream-backed provider tears down and respawns
+      // the underlying Rust task, and FRB emits one
+      // "Fail to post message to Dart" warning per close-sentinel that races
+      // with port disposal. `apiDeviceStatusKick` instead wakes the existing
+      // poll loop early so it issues a fresh `get_status()` immediately —
+      // same UX, no stream churn.
+      apiDeviceStatusKick(serial: _serial);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

@@ -45,8 +45,14 @@ pub async fn api_monitor_serial_start(
         .ok_or_else(|| anyhow::anyhow!("device '{}' has no serial port (CDC0)", resolved))?;
 
     // Spawn the reader task.
+    let serial_for_log = resolved.clone();
     tokio::spawn(async move {
-        serial_reader_loop(&port_path, &sink).await;
+        log::trace!(
+            "frb_diag: monitor_serial task started serial={} port={}",
+            serial_for_log,
+            port_path
+        );
+        serial_reader_loop(&port_path, &sink, &serial_for_log).await;
     });
 
     Ok(())
@@ -58,7 +64,7 @@ pub async fn api_monitor_serial_start(
 /// when the Dart-side stream subscription has been cancelled (sink closed).
 /// When `sink.add()` returns `Err`, the `DeviceConnection` is dropped,
 /// immediately releasing the exclusive port lock.
-async fn serial_reader_loop(port_path: &str, sink: &StreamSink<String>) {
+async fn serial_reader_loop(port_path: &str, sink: &StreamSink<String>, serial: &str) {
     loop {
         match DeviceConnection::open(port_path) {
             Ok(conn) => {
@@ -69,12 +75,20 @@ async fn serial_reader_loop(port_path: &str, sink: &StreamSink<String>) {
                     match conn.read_line().await {
                         Ok(line) => {
                             if sink.add(line).is_err() {
+                                log::trace!(
+                                    "frb_diag: monitor_serial task exiting serial={} reason=sink_closed_on_line",
+                                    serial
+                                );
                                 return; // Sink closed — drop conn, exit.
                             }
                         }
                         Err(attentio::error::AttentioError::Timeout { .. }) => {
                             // No data — check if sink is still alive.
                             if sink.add(String::new()).is_err() {
+                                log::trace!(
+                                    "frb_diag: monitor_serial task exiting serial={} reason=sink_closed_on_timeout_probe",
+                                    serial
+                                );
                                 return; // Sink closed — drop conn, exit.
                             }
                             continue;
@@ -89,11 +103,19 @@ async fn serial_reader_loop(port_path: &str, sink: &StreamSink<String>) {
             }
             Err(attentio::error::AttentioError::PortBusy { .. }) => {
                 if sink.add("[port busy — retrying]".to_string()).is_err() {
+                    log::trace!(
+                        "frb_diag: monitor_serial task exiting serial={} reason=sink_closed_on_port_busy",
+                        serial
+                    );
                     return;
                 }
             }
             Err(_e) => {
                 if sink.add("[connection failed — retrying]".to_string()).is_err() {
+                    log::trace!(
+                        "frb_diag: monitor_serial task exiting serial={} reason=sink_closed_on_open_failure",
+                        serial
+                    );
                     return;
                 }
             }
@@ -102,6 +124,10 @@ async fn serial_reader_loop(port_path: &str, sink: &StreamSink<String>) {
         // Wait before reconnecting, checking sink liveness.
         tokio::time::sleep(Duration::from_secs(3)).await;
         if sink.add(String::new()).is_err() {
+            log::trace!(
+                "frb_diag: monitor_serial task exiting serial={} reason=sink_closed_on_reconnect_probe",
+                serial
+            );
             return;
         }
     }
@@ -147,8 +173,13 @@ pub async fn api_monitor_protocol_start(
     let _ = sink.add("[listening for protocol traffic]".to_string());
 
     // Spawn the reader task.
+    let serial_for_log = resolved.clone();
     tokio::spawn(async move {
-        protocol_reader_loop(rx, &sink).await;
+        log::trace!(
+            "frb_diag: monitor_protocol task started serial={}",
+            serial_for_log
+        );
+        protocol_reader_loop(rx, &sink, &serial_for_log).await;
     });
 
     Ok(())
@@ -158,6 +189,7 @@ pub async fn api_monitor_protocol_start(
 async fn protocol_reader_loop(
     mut rx: tokio::sync::broadcast::Receiver<MonitorEvent>,
     sink: &StreamSink<String>,
+    serial: &str,
 ) {
     loop {
         match rx.recv().await {
@@ -167,6 +199,10 @@ async fn protocol_reader_loop(
                     MonitorEvent::Incoming(resp) => format_incoming(resp),
                 };
                 if sink.add(line).is_err() {
+                    log::trace!(
+                        "frb_diag: monitor_protocol task exiting serial={} reason=sink_closed_on_event",
+                        serial
+                    );
                     return; // Sink closed.
                 }
             }
@@ -175,6 +211,10 @@ async fn protocol_reader_loop(
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                 let _ = sink.add("[protocol monitor channel closed]".to_string());
+                log::trace!(
+                    "frb_diag: monitor_protocol task exiting serial={} reason=broadcast_closed",
+                    serial
+                );
                 return;
             }
         }

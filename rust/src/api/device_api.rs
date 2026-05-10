@@ -3,10 +3,13 @@ use attentio::device::discovery::{find_devices, cache_remember, DeviceMode};
 use attentio::error::AttentioError;
 use attentio::protocol::{open_client, ApClient};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 use tokio::sync::Mutex as AsyncMutex;
 use std::sync::Arc;
+
+use crate::frb_generated::StreamSink;
 
 /// FRB-exposed mirror of `attentio::protocol::client::DeviceStatus`.
 ///
@@ -77,6 +80,20 @@ pub struct KvEntry {
 /// side before any other API call.
 #[flutter_rust_bridge::frb(init)]
 pub fn init_app() {
+    // Install a `log` backend BEFORE FRB's setup so subsequent `log::warn!()`
+    // calls (including FRB's own "Fail to post message to Dart" warning at
+    // `flutter_rust_bridge::rust2dart::sender`) are routed through `log` and
+    // can be filtered via `RUST_LOG`. Without this, FRB falls back to a bare
+    // `println!` (see `flutter_rust_bridge/src/misc/logs.rs`).
+    //
+    // Default filter is `warn` so behaviour is unchanged out of the box; users
+    // who want to silence the FRB warning can run with e.g.
+    //   RUST_LOG=warn,flutter_rust_bridge::rust2dart=error flutter run -d linux
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("warn"),
+    )
+    .try_init();
+
     flutter_rust_bridge::setup_default_user_utils();
 }
 
@@ -237,15 +254,7 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
 
     Ok(devices
         .into_iter()
-        .map(|d| DeviceInfo {
-            serial: d.serial,
-            name: d.product,
-            device_type: d.device_type,
-            mode: mode_string(d.mode),
-            usb_location: d.usb_location,
-            serial_port: d.cdc0.as_ref().map(|p| p.path.clone()),
-            protocol_port: d.cdc1.as_ref().or(d.single_cdc.as_ref()).map(|p| p.path.clone()),
-        })
+        .map(device_to_info)
         .collect())
 }
 
@@ -380,4 +389,194 @@ pub async fn api_rename_device(serial: Option<String>, name: String) -> Result<(
     .await?;
     cache_remember(&resolved, &name);
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Long-lived polling streams (replaces per-tick one-shot futures)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Why: every `async fn` exposed to Dart posts its result back to a one-shot
+// Dart receive port via `flutter_rust_bridge::Rust2DartSender::send_or_warn`.
+// If the Dart side has cancelled / disposed the listener before the Rust
+// future completes (Riverpod family auto-dispose, page navigation, list
+// rebuild, etc.), FRB prints "Fail to post message to Dart." once per
+// orphaned future. Polling Rust APIs from Dart `Stream.periodic(...)`
+// generators made this easy to trigger because each tick spawns a fresh
+// future with a fresh receive port.
+//
+// Fix: keep one long-lived Rust task per stream that owns a `StreamSink`.
+// `sink.add(...)` returns `Err` (no warning) when the Dart side closes,
+// and the loop exits cleanly. Only when the *last* sink clone is dropped
+// does FRB attempt to post a close-stream sentinel — and that is the only
+// remaining path through which a warning could surface, ~once per stream
+// lifetime. Combined with the env_logger init in `init_app`, residual
+// warnings are routable via `RUST_LOG`.
+
+/// Unix-millis deadline until which the device list stream polls fast
+/// (2 s instead of 5 s). 0 = no fast-poll requested.
+fn fast_refresh_deadline() -> &'static AtomicI64 {
+    static DEADLINE: OnceLock<AtomicI64> = OnceLock::new();
+    DEADLINE.get_or_init(|| AtomicI64::new(0))
+}
+
+fn now_unix_millis() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Request that the device list stream poll at the fast cadence (2 s) for
+/// the next 15 seconds. Idempotent / monotonic — repeated calls extend the
+/// window. The corresponding Dart-side notifier (`deviceRefreshProvider`)
+/// continues to track the deadline for UI badges; this just informs Rust.
+pub fn api_devices_request_fast_refresh() {
+    fast_refresh_deadline().store(now_unix_millis() + 15_000, Ordering::Relaxed);
+}
+
+/// Per-serial wake-ups for the device-status stream poll loop. When fired,
+/// the loop skips its current sleep and polls immediately. Used to make
+/// post-action UI updates feel instant without tearing down and respawning
+/// the stream (which would trigger FRB's "Fail to post message to Dart"
+/// close-sentinel warning every time).
+fn status_notify_map() -> &'static StdMutex<HashMap<String, Arc<tokio::sync::Notify>>> {
+    static MAP: OnceLock<StdMutex<HashMap<String, Arc<tokio::sync::Notify>>>> = OnceLock::new();
+    MAP.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+fn status_notify_for(serial: &str) -> Arc<tokio::sync::Notify> {
+    let mut g = status_notify_map().lock().expect("status-notify map poisoned");
+    g.entry(serial.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Notify::new()))
+        .clone()
+}
+
+/// Wake the per-serial device-status poll loop so it polls *now* rather than
+/// waiting for the next 2-second tick. Used by the UI after state-changing
+/// commands (claim, release, set RGB, etc.) so the next status update lands
+/// promptly without invalidating the stream provider — the latter triggers
+/// FRB's stream-close-sentinel warning ("Fail to post message to Dart").
+///
+/// No-op if no stream is currently subscribed for `serial`; the notify is
+/// edge-triggered (not a flag) so a kick before the loop starts is dropped.
+/// Acceptable: the first stream tick is immediate anyway.
+pub fn api_device_status_kick(serial: String) {
+    status_notify_for(&serial).notify_one();
+}
+
+/// Long-lived stream of the current device list. Replaces the previous
+/// Dart-side `Stream.periodic` polling around `apiListDevicesFull`.
+///
+/// Cadence: 2 s while `api_devices_request_fast_refresh` is in effect,
+/// otherwise 5 s. The first emit is immediate. Errors from `find_devices`
+/// produce an empty list (matches previous Dart-side fallback).
+pub async fn api_devices_stream_start(sink: StreamSink<Vec<DeviceInfo>>) -> Result<()> {
+    tokio::spawn(async move {
+        log::trace!("frb_diag: devices_stream task started");
+        // Fast initial emit so the UI populates without waiting a full tick.
+        let initial = match tokio::time::timeout(Duration::from_secs(5), find_devices()).await {
+            Ok(Ok(devs)) => devs.into_iter().map(device_to_info).collect(),
+            _ => Vec::new(),
+        };
+        if sink.add(initial).is_err() {
+            log::trace!("frb_diag: devices_stream task exiting reason=sink_closed_on_initial");
+            return;
+        }
+
+        loop {
+            let fast = fast_refresh_deadline().load(Ordering::Relaxed) > now_unix_millis();
+            let interval = if fast {
+                Duration::from_secs(2)
+            } else {
+                Duration::from_secs(5)
+            };
+            tokio::time::sleep(interval).await;
+
+            let next = match tokio::time::timeout(Duration::from_secs(5), find_devices()).await {
+                Ok(Ok(devs)) => devs.into_iter().map(device_to_info).collect(),
+                _ => Vec::new(),
+            };
+
+            if sink.add(next).is_err() {
+                log::trace!("frb_diag: devices_stream task exiting reason=sink_closed_on_tick");
+                return;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Long-lived per-device status stream. Replaces the previous Dart-side
+/// `Stream.periodic` loop around `apiGetStatus`.
+///
+/// Polls every 2 s. Successful results are pushed to Dart; errors are
+/// silently skipped (next tick retries). Exits when the Dart subscription
+/// is cancelled.
+pub async fn api_device_status_stream_start(
+    serial: String,
+    sink: StreamSink<DeviceStatus>,
+) -> Result<()> {
+    let notify = status_notify_for(&serial);
+    tokio::spawn(async move {
+        log::trace!("frb_diag: device_status task started serial={}", serial);
+        // Immediate first tick.
+        if let Ok(s) = with_client(Some(serial.clone()), async |c| c.get_status().await).await {
+            if sink.add(Into::<DeviceStatus>::into(s)).is_err() {
+                log::trace!(
+                    "frb_diag: device_status task exiting serial={} reason=sink_closed_on_initial",
+                    serial
+                );
+                return;
+            }
+        }
+        loop {
+            // Sleep up to 2 s, but wake early if a kick arrived (state-changing
+            // command finished — UI wants a fresh status now).
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                _ = notify.notified() => {
+                    log::trace!(
+                        "frb_diag: device_status task kicked serial={}",
+                        serial
+                    );
+                }
+            }
+            match with_client(Some(serial.clone()), async |c| c.get_status().await).await {
+                Ok(status) => {
+                    if sink.add(Into::<DeviceStatus>::into(status)).is_err() {
+                        log::trace!(
+                            "frb_diag: device_status task exiting serial={} reason=sink_closed_on_tick",
+                            serial
+                        );
+                        return;
+                    }
+                }
+                Err(_e) => {
+                    // Skip this tick. Note we cannot probe sink liveness here
+                    // without sending a message; rely on the next successful
+                    // tick (or a long string of failures producing a slow
+                    // shutdown — acceptable, no warnings emitted).
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Internal: convert an `attentio::device::discovery::AttentioDevice` into the
+/// FRB-exposed `DeviceInfo`. Centralised here so both `api_list_devices_full`
+/// and `api_devices_stream_start` agree on the mapping.
+fn device_to_info(d: attentio::device::discovery::AttentioDevice) -> DeviceInfo {
+    DeviceInfo {
+        serial: d.serial,
+        name: d.product,
+        device_type: d.device_type,
+        mode: mode_string(d.mode),
+        usb_location: d.usb_location,
+        serial_port: d.cdc0.as_ref().map(|p| p.path.clone()),
+        protocol_port: d.cdc1.as_ref().or(d.single_cdc.as_ref()).map(|p| p.path.clone()),
+    }
 }

@@ -5,12 +5,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 
 /// Holds the expiry time of the current fast-polling window (if any).
+///
+/// The Rust-side device list stream owns its own deadline (set via
+/// `apiDevicesRequestFastRefresh`); this notifier mirrors it so UI badges
+/// (e.g. a "refreshing" indicator) can still observe whether fast-polling
+/// is active.
 class DeviceRefreshNotifier extends Notifier<DateTime?> {
   @override
   DateTime? build() => null;
 
   void refresh() {
     state = DateTime.now().add(const Duration(seconds: 15));
+    // Tell the long-lived Rust poll loop to switch to the 2-second cadence.
+    apiDevicesRequestFastRefresh();
   }
 }
 
@@ -19,49 +26,25 @@ final deviceRefreshProvider =
   DeviceRefreshNotifier.new,
 );
 
-/// Polls [apiListDevicesFull] on an interval so device lists stay fresh even
-/// without manual refresh. When [deviceRefreshProvider] indicates fast-polling,
-/// the interval drops to 2 seconds for 15 seconds.
-final devicesStreamProvider = StreamProvider<List<DeviceInfo>>((ref) async* {
-  // Emit an initial value as quickly as possible, then continue polling.
-  try {
-    yield await apiListDevicesFull();
-  } catch (_) {
-    yield <DeviceInfo>[];
-  }
-
-  while (true) {
-    final fastUntil = ref.read(deviceRefreshProvider);
-    final isFast =
-        fastUntil != null && DateTime.now().isBefore(fastUntil);
-    final interval =
-        isFast ? const Duration(seconds: 2) : const Duration(seconds: 5);
-    await Future<void>.delayed(interval);
-    try {
-      yield await apiListDevicesFull();
-    } catch (_) {
-      // Swallow transient errors — next tick will try again.
-    }
-  }
+/// Live device list, fed by a long-lived Rust task that polls
+/// `find_devices()` internally and pushes updates over a `StreamSink`.
+///
+/// Replaces a previous Dart-side `Stream.periodic` loop that spawned a fresh
+/// `apiListDevicesFull` future every tick. That pattern caused
+/// "Fail to post message to Dart" warnings whenever Riverpod auto-disposed
+/// the provider (or its watchers rebuilt) while a Rust future was in flight.
+final devicesStreamProvider = StreamProvider<List<DeviceInfo>>((ref) {
+  return apiDevicesStreamStart();
 });
 
-/// Per-device live status stream. Polls [apiGetStatus] every two seconds for
-/// the given serial. Use `ref.watch(deviceStatusStreamProvider(serial))`.
+/// Per-device live status stream, fed by a long-lived Rust task that polls
+/// `get_status` every 2 s and pushes updates over a `StreamSink`. See
+/// [devicesStreamProvider] for the rationale.
+///
+/// Use `ref.watch(deviceStatusStreamProvider(serial))`.
 final deviceStatusStreamProvider =
-    StreamProvider.family<DeviceStatus, String>((ref, serial) async* {
-  // First tick ASAP.
-  try {
-    yield await apiGetStatus(serial: serial);
-  } catch (e) {
-    rethrow;
-  }
-  await for (final _ in Stream.periodic(const Duration(seconds: 2))) {
-    try {
-      yield await apiGetStatus(serial: serial);
-    } catch (_) {
-      // Skip tick; next poll retries.
-    }
-  }
+    StreamProvider.family<DeviceStatus, String>((ref, serial) {
+  return apiDeviceStatusStreamStart(serial: serial);
 });
 
 /// One-shot lookup of device status (used by detail pages that also accept a
