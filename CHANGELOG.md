@@ -53,6 +53,34 @@ Added
   next 2 s tick. Edge-triggered via `tokio::sync::Notify`; safe to call
   before a stream is subscribed (the first tick is immediate anyway).
 
+- **Firmware Update UI** — new "Firmware Update" card on the device detail page
+  (above the Metadata card) lets users flash application firmware directly from the
+  GUI without the CLI. Two-step flow: "Select Firmware File…" opens a `.bin` file
+  picker and shows the chosen filename with a "Change" link; "Flash Firmware" then
+  starts the update. During the flash, a circular progress indicator and phase label
+  ("Validating firmware file…", "Entering bootloader…", "Erasing flash…", "Flashing
+  firmware (X%)", "Waiting for device to reboot…") replace all other cards and the
+  normal-mode controls. The Metadata card auto-refreshes to show the new firmware
+  version on completion. Backed by `api_flash_firmware` in
+  `rust/src/api/device_api.rs`, which evicts the cached `ApClient`, streams
+  `DfuProgress` events from the CLI crate's new `flash_firmware_for_serial` API,
+  and triggers a fast device-list re-poll on success.
+
+Fixed
+
+- **Status header and control cards no longer cycle during DFU** — while a flash is
+  in progress the `device` info used by `build()` is frozen to the initial page
+  snapshot (`widget.device`). This prevents the device's Normal ↔ Bootloader mode
+  transitions from toggling `isNormal`, which had caused the status grid, mode chip,
+  and control cards to flicker. The DFU stream subscription now lives at page level
+  (`_DeviceDetailPageState.dispose`) rather than inside a child widget, so it is
+  never cancelled mid-flash by a widget unmount.
+
+- **Status block no longer shows a loading bar when the device is in bootloader
+  mode** — `_LiveStatusBlock` previously rendered `LinearProgressIndicator()` when
+  `statusAsync` was in the loading state (i.e. device in bootloader). Changed to
+  `SizedBox.shrink()` so the block collapses silently instead of showing a pulsing bar.
+
 ---
 
 ## [Development] (2026-05-07)

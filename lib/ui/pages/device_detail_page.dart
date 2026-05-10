@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -48,6 +49,118 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
   double _brightness = 100;
   bool _busy = false;
 
+  // ── DFU flash state ────────────────────────────────────────────────────────
+  // Held at page level so the subscription survives device mode changes.
+  // When the device enters bootloader mid-flash, the page rebuilds but this
+  // state stays alive, keeping the progress stream connected.
+  DfuProgress? _dfuProgress;
+  StreamSubscription<DfuProgress>? _dfuSub;
+  String? _selectedFirmwarePath;
+
+  bool get _isFlashing =>
+      _dfuProgress != null &&
+      _dfuProgress!.phase != 'done' &&
+      _dfuProgress!.phase != 'error';
+
+  @override
+  void dispose() {
+    _dfuSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _selectFirmware() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Select Firmware Binary',
+      type: FileType.custom,
+      allowedExtensions: ['bin'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (path == null) return;
+    setState(() => _selectedFirmwarePath = path);
+  }
+
+  Future<void> _doFlash() async {
+    final path = _selectedFirmwarePath;
+    if (path == null) return;
+
+    await _dfuSub?.cancel();
+    setState(() {
+      _selectedFirmwarePath = null;
+      _dfuProgress = DfuProgress(
+          phase: 'validating',
+          bytesWritten: BigInt.zero,
+          bytesTotal: BigInt.zero,
+        );
+    });
+
+    _dfuSub = apiFlashFirmware(
+      serial: _serial,
+      firmwarePath: path, // path from _selectFirmware, cleared before starting
+    ).listen(
+      (event) {
+        if (!mounted) return;
+        setState(() => _dfuProgress = event);
+        if (event.phase == 'done') {
+          ref.invalidate(deviceMetadataProvider(_serial));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Firmware flashed successfully.')),
+          );
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) setState(() => _dfuProgress = null);
+          });
+        } else if (event.phase == 'error') {
+          final msg = event.errorMessage ?? 'Unknown error';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Flash failed: $msg')),
+          );
+          Future.delayed(const Duration(seconds: 3), () {
+            if (mounted) setState(() => _dfuProgress = null);
+          });
+        }
+      },
+      onError: (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Flash error: $e')),
+        );
+        setState(() => _dfuProgress = null);
+      },
+    );
+  }
+
+  String _phaseLabel(DfuProgress p) {
+    switch (p.phase) {
+      case 'validating':
+        return 'Validating firmware file…';
+      case 'entering_bootloader':
+        return 'Entering bootloader…';
+      case 'erasing':
+        return 'Erasing flash…';
+      case 'flashing':
+        final pct = p.bytesTotal > BigInt.zero
+            ? (p.bytesWritten * BigInt.from(100) ~/ p.bytesTotal).toInt()
+            : 0;
+        return 'Flashing firmware ($pct%)';
+      case 'rebooting':
+        return 'Waiting for device to reboot…';
+      case 'done':
+        return 'Done';
+      case 'error':
+        return 'Error: ${p.errorMessage ?? 'unknown'}';
+      default:
+        return p.phase;
+    }
+  }
+
+  double? _progressValue(DfuProgress p) {
+    if (p.phase == 'flashing' && p.bytesTotal > BigInt.zero) {
+      return p.bytesWritten.toDouble() / p.bytesTotal.toDouble();
+    }
+    return null;
+  }
+  // ── end DFU flash state ────────────────────────────────────────────────────
+
   String get _serial => widget.device.serial;
 
   Future<void> _run(Future<void> Function() action, String successMsg) async {
@@ -85,15 +198,18 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     // (e.g. after a rename). Fall back to the static widget.device if the
     // device disappears from the stream momentarily.
     final devicesAsync = ref.watch(devicesStreamProvider);
-    final device =
-        devicesAsync.whenData((devices) {
-          try {
-            return devices.firstWhere((d) => d.serial == _serial);
-          } catch (_) {
-            return widget.device;
-          }
-        }).value ??
-        widget.device;
+    // Freeze to the initial snapshot during DFU so the mode chip and status
+    // block don't cycle as the device alternates between Normal/Bootloader.
+    final device = _isFlashing
+        ? widget.device
+        : devicesAsync.whenData((devices) {
+              try {
+                return devices.firstWhere((d) => d.serial == _serial);
+              } catch (_) {
+                return widget.device;
+              }
+            }).value ??
+            widget.device;
 
     final isNormal = device.mode == 'Normal';
     // Only watch the status stream when in normal mode. The provider yields
@@ -117,7 +233,12 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
           children: [
             _StatusHeader(device: device, statusAsync: statusAsync),
             const SizedBox(height: 16),
-            if (!isNormal)
+            if (_isFlashing)
+              _FirmwareProgressCard(
+                phaseLabel: _phaseLabel(_dfuProgress!),
+                progressValue: _progressValue(_dfuProgress!),
+              )
+            else if (!isNormal)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(16),
@@ -207,6 +328,12 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
               ),
               const SizedBox(height: 16),
               _DeviceSettingsCard(serial: _serial, device: device),
+              const SizedBox(height: 16),
+              _FirmwareUpdateCard(
+                selectedFilename: _selectedFirmwarePath?.split('/').last,
+                onSelect: _selectFirmware,
+                onFlash: _doFlash,
+              ),
               const SizedBox(height: 16),
               _MetadataCard(serial: _serial),
             ],
@@ -460,10 +587,7 @@ class _LiveStatusBlock extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         statusAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
-          ),
+          loading: () => const SizedBox.shrink(),
           error: (e, _) => Text('Error: $e'),
           data: (s) {
             final claimed = s.controlMode == 1; // 1 = REMOTE
@@ -1688,6 +1812,121 @@ class _EditableKvListState extends State<_EditableKvList> {
             ),
           ),
       ],
+    );
+  }
+}
+
+// ── Firmware Update Card (idle state) ────────────────────────────────────────
+
+class _FirmwareUpdateCard extends StatelessWidget {
+  const _FirmwareUpdateCard({
+    required this.selectedFilename,
+    required this.onSelect,
+    required this.onFlash,
+  });
+
+  final String? selectedFilename;
+  final VoidCallback onSelect;
+  final VoidCallback onFlash;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Firmware Update',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            if (selectedFilename == null)
+              FilledButton.icon(
+                onPressed: onSelect,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Select Firmware File…'),
+              )
+            else ...[
+              Row(
+                children: [
+                  const Icon(Icons.description_outlined),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      selectedFilename!,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: onSelect,
+                    child: const Text('Change'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: onFlash,
+                icon: const Icon(Icons.system_update),
+                label: const Text('Flash Firmware'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Firmware Progress Card (shown during an active flash) ─────────────────────
+
+class _FirmwareProgressCard extends StatelessWidget {
+  const _FirmwareProgressCard({
+    required this.phaseLabel,
+    required this.progressValue,
+  });
+
+  final String phaseLabel;
+  final double? progressValue; // null = indeterminate
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Firmware Update',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    value: progressValue,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(phaseLabel)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Do not unplug the device.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

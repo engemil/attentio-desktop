@@ -566,6 +566,137 @@ pub async fn api_device_status_stream_start(
     Ok(())
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Firmware update (DFU)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Structured progress event for a firmware flash operation.
+///
+/// `phase` is one of: `"validating"`, `"entering_bootloader"`, `"erasing"`,
+/// `"flashing"`, `"rebooting"`, `"done"`, `"error"`.
+pub struct DfuProgress {
+    pub phase: String,
+    pub bytes_written: u64,
+    pub bytes_total: u64,
+    pub error_message: Option<String>,
+}
+
+/// Drop the cached `ApClient` for `serial` so its serial port is released
+/// before the DFU process tries to open the device.
+async fn evict_client(serial: &str) {
+    let slot = slot_for(serial);
+    let mut guard = slot.lock().await;
+    *guard = None;
+}
+
+fn dfu_event_to_progress(event: attentio::cli::commands::dfu::DfuEvent) -> DfuProgress {
+    use attentio::cli::commands::dfu::DfuEvent;
+    match event {
+        DfuEvent::ValidatingFirmware => DfuProgress {
+            phase: "validating".to_string(),
+            bytes_written: 0,
+            bytes_total: 0,
+            error_message: None,
+        },
+        DfuEvent::EnteringBootloader => DfuProgress {
+            phase: "entering_bootloader".to_string(),
+            bytes_written: 0,
+            bytes_total: 0,
+            error_message: None,
+        },
+        DfuEvent::Erasing => DfuProgress {
+            phase: "erasing".to_string(),
+            bytes_written: 0,
+            bytes_total: 0,
+            error_message: None,
+        },
+        DfuEvent::Writing { bytes_written, bytes_total } => DfuProgress {
+            phase: "flashing".to_string(),
+            bytes_written,
+            bytes_total,
+            error_message: None,
+        },
+        DfuEvent::WaitingForReboot => DfuProgress {
+            phase: "rebooting".to_string(),
+            bytes_written: 0,
+            bytes_total: 0,
+            error_message: None,
+        },
+        DfuEvent::Done => DfuProgress {
+            phase: "done".to_string(),
+            bytes_written: 0,
+            bytes_total: 0,
+            error_message: None,
+        },
+    }
+}
+
+/// Flash firmware from `firmware_path` to the device identified by `serial`,
+/// streaming structured [`DfuProgress`] events to `sink`.
+///
+/// The device may be in Normal or Bootloader mode; if Normal, the AP
+/// `DFU_ENTER` command is sent first. The cached `ApClient` for the device
+/// is evicted before the operation so the serial port is free for DFU.
+///
+/// After a successful flash, the device list stream is nudged to fast-poll so
+/// the device re-appears in the UI promptly.
+pub async fn api_flash_firmware(
+    serial: String,
+    firmware_path: String,
+    sink: StreamSink<DfuProgress>,
+) -> Result<()> {
+    // Release any open ApClient so the port is available for DFU.
+    evict_client(&serial).await;
+
+    // Read firmware file before spawning so we can surface I/O errors early.
+    let firmware_data = tokio::fs::read(&firmware_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to read firmware file: {}", e))?;
+
+    let (tx, mut rx) =
+        tokio::sync::mpsc::unbounded_channel::<attentio::cli::commands::dfu::DfuEvent>();
+
+    let serial_clone = serial.clone();
+    let flash_task = tokio::spawn(async move {
+        attentio::cli::commands::dfu::flash_firmware_for_serial(&serial_clone, firmware_data, tx)
+            .await
+    });
+
+    // Forward events from the channel to the Flutter sink.
+    while let Some(event) = rx.recv().await {
+        if sink.add(dfu_event_to_progress(event)).is_err() {
+            flash_task.abort();
+            return Ok(());
+        }
+    }
+
+    // Channel closed — flash task has finished. Surface any error.
+    match flash_task.await {
+        Ok(Ok(())) => {
+            // Nudge device list to fast-poll so the re-appeared device shows up quickly.
+            api_devices_request_fast_refresh();
+        }
+        Ok(Err(e)) => {
+            let _ = sink.add(DfuProgress {
+                phase: "error".to_string(),
+                bytes_written: 0,
+                bytes_total: 0,
+                error_message: Some(e.to_string()),
+            });
+        }
+        Err(_) => {
+            let _ = sink.add(DfuProgress {
+                phase: "error".to_string(),
+                bytes_written: 0,
+                bytes_total: 0,
+                error_message: Some("DFU task panicked".to_string()),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Internal: convert an `attentio::device::discovery::AttentioDevice` into the
 /// FRB-exposed `DeviceInfo`. Centralised here so both `api_list_devices_full`
 /// and `api_devices_stream_start` agree on the mapping.
