@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:attentio_desktop/ui/utils/device_display.dart';
 import 'package:attentio_desktop/providers/devices_providers.dart';
+import 'package:attentio_desktop/providers/dfu_provider.dart';
 import 'package:attentio_desktop/ui/widgets/preset_edit_dialog.dart';
 import 'package:attentio_desktop/providers/presets_provider.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
@@ -48,25 +49,7 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
   Color _pickedColor = Colors.white;
   double _brightness = 100;
   bool _busy = false;
-
-  // ── DFU flash state ────────────────────────────────────────────────────────
-  // Held at page level so the subscription survives device mode changes.
-  // When the device enters bootloader mid-flash, the page rebuilds but this
-  // state stays alive, keeping the progress stream connected.
-  DfuProgress? _dfuProgress;
-  StreamSubscription<DfuProgress>? _dfuSub;
   String? _selectedFirmwarePath;
-
-  bool get _isFlashing =>
-      _dfuProgress != null &&
-      _dfuProgress!.phase != 'done' &&
-      _dfuProgress!.phase != 'error';
-
-  @override
-  void dispose() {
-    _dfuSub?.cancel();
-    super.dispose();
-  }
 
   Future<void> _selectFirmware() async {
     final result = await FilePicker.platform.pickFiles(
@@ -80,53 +63,11 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     setState(() => _selectedFirmwarePath = path);
   }
 
-  Future<void> _doFlash() async {
+  void _doFlash(DeviceInfo currentDevice) {
     final path = _selectedFirmwarePath;
     if (path == null) return;
-
-    await _dfuSub?.cancel();
-    setState(() {
-      _selectedFirmwarePath = null;
-      _dfuProgress = DfuProgress(
-          phase: 'validating',
-          bytesWritten: BigInt.zero,
-          bytesTotal: BigInt.zero,
-        );
-    });
-
-    _dfuSub = apiFlashFirmware(
-      serial: _serial,
-      firmwarePath: path, // path from _selectFirmware, cleared before starting
-    ).listen(
-      (event) {
-        if (!mounted) return;
-        setState(() => _dfuProgress = event);
-        if (event.phase == 'done') {
-          ref.invalidate(deviceMetadataProvider(_serial));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Firmware flashed successfully.')),
-          );
-          Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) setState(() => _dfuProgress = null);
-          });
-        } else if (event.phase == 'error') {
-          final msg = event.errorMessage ?? 'Unknown error';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Flash failed: $msg')),
-          );
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) setState(() => _dfuProgress = null);
-          });
-        }
-      },
-      onError: (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Flash error: $e')),
-        );
-        setState(() => _dfuProgress = null);
-      },
-    );
+    setState(() => _selectedFirmwarePath = null);
+    ref.read(dfuProvider.notifier).startFlash(_serial, path, currentDevice);
   }
 
   String _phaseLabel(DfuProgress p) {
@@ -163,6 +104,62 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
 
   String get _serial => widget.device.serial;
 
+  Future<void> _editName(DeviceInfo device) async {
+    final controller = TextEditingController(text: device.name ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Device'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Device Name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (newName == null) return;
+    try {
+      await apiRenameDevice(serial: _serial, name: newName);
+      // Nudge the Rust poll loop to fast-cadence — cache_remember() on the
+      // Rust side returns the new name on the very next find_devices() call.
+      // No provider invalidation: device_name is filtered from the settings
+      // display, so nothing visible changes there after a rename.
+      apiDevicesRequestFastRefresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newName.isEmpty
+                  ? 'Device name cleared'
+                  : 'Device renamed to "$newName"',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _run(Future<void> Function() action, String successMsg) async {
     setState(() => _busy = true);
     try {
@@ -198,9 +195,15 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     // (e.g. after a rename). Fall back to the static widget.device if the
     // device disappears from the stream momentarily.
     final devicesAsync = ref.watch(devicesStreamProvider);
+    final dfuState = ref.watch(dfuProvider);
+    final bool isFlashingThis = dfuState.serial == _serial && dfuState.isActive;
+    final DfuProgress? dfuProgress =
+        dfuState.serial == _serial ? dfuState.progress : null;
+    final bool hasTerminalState = dfuProgress != null && !isFlashingThis;
+
     // Freeze to the initial snapshot during DFU so the mode chip and status
     // block don't cycle as the device alternates between Normal/Bootloader.
-    final device = _isFlashing
+    final device = (isFlashingThis || hasTerminalState)
         ? widget.device
         : devicesAsync.whenData((devices) {
               try {
@@ -231,23 +234,51 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            _StatusHeader(device: device, statusAsync: statusAsync),
+            _StatusHeader(
+              device: device,
+              statusAsync: statusAsync,
+              onRename: (isNormal && !isFlashingThis) ? () => _editName(device) : null,
+            ),
             const SizedBox(height: 16),
-            if (_isFlashing)
+            if (isFlashingThis)
               _FirmwareProgressCard(
-                phaseLabel: _phaseLabel(_dfuProgress!),
-                progressValue: _progressValue(_dfuProgress!),
+                // ignore: unnecessary_non_null_assertion
+                phaseLabel: _phaseLabel(dfuProgress!),
+                // ignore: unnecessary_non_null_assertion
+                progressValue: _progressValue(dfuProgress!),
               )
-            else if (!isNormal)
-              const Card(
+            else if (hasTerminalState)
+              _FirmwareTerminalCard(
+                progress: dfuProgress,
+                onDismiss: () => ref.read(dfuProvider.notifier).dismiss(),
+              )
+            else if (!isNormal) ...[
+              Card(
                 child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Device is not in normal mode. AP protocol controls are '
-                    'unavailable until the device exits bootloader mode.',
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange.shade700),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Device is in bootloader mode. AP protocol controls '
+                          'are unavailable. Flash application firmware below to '
+                          'restore normal operation.',
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              )
+              ),
+              const SizedBox(height: 16),
+              _FirmwareUpdateCard(
+                selectedFilename: _selectedFirmwarePath?.split('/').last,
+                onSelect: dfuState.isActive ? null : _selectFirmware,
+                onFlash: dfuState.isActive ? null : () => _doFlash(device),
+              ),
+            ]
             else ...[
               _QuickActionsCard(
                 onClaim: () => _run(() => apiClaim(serial: _serial), 'Claimed'),
@@ -259,7 +290,7 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                     _run(() => apiPowerOff(serial: _serial), 'Power off'),
                 onPing: () => _run(() async {
                   final ms = await apiPing(serial: _serial);
-                  if (mounted) {
+                  if (context.mounted) {
                     ScaffoldMessenger.of(
                       context,
                     ).showSnackBar(SnackBar(content: Text('Ping: ${ms}ms')));
@@ -327,12 +358,16 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                 },
               ),
               const SizedBox(height: 16),
-              _DeviceSettingsCard(serial: _serial, device: device),
+              _DeviceSettingsCard(
+                serial: _serial,
+                device: device,
+                onSettingSaved: () => ref.invalidate(deviceSettingsProvider(_serial)),
+              ),
               const SizedBox(height: 16),
               _FirmwareUpdateCard(
                 selectedFilename: _selectedFirmwarePath?.split('/').last,
-                onSelect: _selectFirmware,
-                onFlash: _doFlash,
+                onSelect: dfuState.isActive ? null : _selectFirmware,
+                onFlash: dfuState.isActive ? null : () => _doFlash(device),
               ),
               const SizedBox(height: 16),
               _MetadataCard(serial: _serial),
@@ -348,10 +383,15 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
 /// (name / serial / mode chip / device type / USB location), and the full
 /// 7-field live status grid. Adapts to a stacked layout on narrow windows.
 class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({required this.device, required this.statusAsync});
+  const _StatusHeader({
+    required this.device,
+    required this.statusAsync,
+    required this.onRename,
+  });
 
   final DeviceInfo device;
   final AsyncValue<DeviceStatus> statusAsync;
+  final VoidCallback? onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +405,11 @@ class _StatusHeader extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= _kStatusHeaderWideBreakpoint;
-            final identity = _IdentityBlock(device: device, swatch: swatch);
+            final identity = _IdentityBlock(
+              device: device,
+              swatch: swatch,
+              onRename: onRename,
+            );
             final status = _LiveStatusBlock(statusAsync: statusAsync);
             if (wide) {
               return Row(
@@ -394,68 +438,19 @@ class _StatusHeader extends StatelessWidget {
   }
 }
 
-class _IdentityBlock extends ConsumerWidget {
-  const _IdentityBlock({required this.device, required this.swatch});
+class _IdentityBlock extends StatelessWidget {
+  const _IdentityBlock({
+    required this.device,
+    required this.swatch,
+    required this.onRename,
+  });
 
   final DeviceInfo device;
   final Color swatch;
-
-  Future<void> _editName(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController(text: device.name ?? '');
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename Device'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Device Name',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (newName == null) return;
-    try {
-      await apiRenameDevice(serial: device.serial, name: newName);
-      // Refresh device discovery and settings so the name updates everywhere.
-      ref.invalidate(devicesStreamProvider);
-      ref.invalidate(deviceSettingsProvider(device.serial));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              newName.isEmpty
-                  ? 'Device name cleared'
-                  : 'Device renamed to "$newName"',
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
+  final VoidCallback? onRename;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final displayName = deviceDisplayName(device);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -529,7 +524,7 @@ class _IdentityBlock extends ConsumerWidget {
                       minWidth: 32,
                       minHeight: 32,
                     ),
-                    onPressed: () => _editName(context, ref),
+                    onPressed: onRename,
                   ),
                 ],
               ),
@@ -1612,10 +1607,15 @@ class _MetadataCard extends ConsumerWidget {
 }
 
 class _DeviceSettingsCard extends ConsumerWidget {
-  const _DeviceSettingsCard({required this.serial, required this.device});
+  const _DeviceSettingsCard({
+    required this.serial,
+    required this.device,
+    required this.onSettingSaved,
+  });
 
   final String serial;
   final DeviceInfo device;
+  final VoidCallback onSettingSaved;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1680,7 +1680,7 @@ class _DeviceSettingsCard extends ConsumerWidget {
                       key: key,
                       value: value,
                     );
-                    ref.invalidate(deviceSettingsProvider(serial));
+                    onSettingSaved();
                     if (context.mounted) {
                       ScaffoldMessenger.of(
                         context,
@@ -1826,8 +1826,8 @@ class _FirmwareUpdateCard extends StatelessWidget {
   });
 
   final String? selectedFilename;
-  final VoidCallback onSelect;
-  final VoidCallback onFlash;
+  final VoidCallback? onSelect;
+  final VoidCallback? onFlash;
 
   @override
   Widget build(BuildContext context) {
@@ -1923,6 +1923,58 @@ class _FirmwareProgressCard extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Firmware Terminal Card (shown after flash completes or fails) ──────────────
+
+class _FirmwareTerminalCard extends StatelessWidget {
+  const _FirmwareTerminalCard({
+    required this.progress,
+    required this.onDismiss,
+  });
+
+  final DfuProgress progress;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDone = progress.phase == 'done';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Firmware Update',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  isDone ? Icons.check_circle_outline : Icons.error_outline,
+                  color: isDone ? Colors.green : Colors.redAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    isDone
+                        ? 'Firmware flashed successfully.'
+                        : 'Flash failed: ${progress.errorMessage ?? 'unknown error'}',
+                  ),
+                ),
+                TextButton(
+                  onPressed: onDismiss,
+                  child: const Text('Dismiss'),
+                ),
+              ],
             ),
           ],
         ),

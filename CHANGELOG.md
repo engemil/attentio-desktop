@@ -14,6 +14,81 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-11)
+
+Added
+
+- **Firmware update from bootloader mode** — the device detail page now shows the
+  Firmware Update card (file picker + Flash button) when the device is in bootloader
+  mode, alongside an info banner explaining that AP protocol controls are unavailable.
+  Previously only a static "controls unavailable" message was shown.
+
+- **Persistent DFU state (`lib/providers/dfu_provider.dart`)** — new `DfuNotifier`
+  (`NotifierProvider<DfuNotifier, DfuState>`) manages the firmware flash stream at app
+  level. The `StreamSubscription` is held by the notifier (app lifetime) instead of
+  `_DeviceDetailPageState.dispose()`, so navigating away from the device detail page no
+  longer aborts the flash. `DfuState` carries `serial`, `progress`, and the `DeviceInfo`
+  snapshot captured when flashing starts.
+
+- **Cross-page flash status on the overview** — while a flash is active:
+  - The device tile shows a `LinearProgressIndicator` (determinate during the writing
+    phase, indeterminate otherwise) at the bottom of its card.
+  - The mode badge changes to "Flashing" (amber).
+  - The tile remains visible even when the device momentarily drops from USB (entering
+    bootloader, rebooting after flash): `_OverviewBody` pins the device in the display
+    list using the `DeviceInfo` stored in `DfuState`.
+  - The live-status and favourite-preset streams are suppressed for the duration of the
+    flash to avoid spurious reconnect errors and colour-swatch flickering.
+
+- **Flash result card (`_FirmwareTerminalCard`)** — after a flash completes or fails,
+  a persistent card replaces the progress card. Shows a green check + "Firmware flashed
+  successfully." on success, or a red error icon + the error message on failure. A
+  "Dismiss" button clears the state and returns to the Firmware Update card.
+
+Fixed
+
+- **`_dependents.isEmpty` crash on device rename** — `_IdentityBlock._editName` called
+  `ref.invalidate(devicesStreamProvider)` in an async callback using the
+  `ConsumerWidget.build`-time `WidgetRef`. In Riverpod 3.x this triggers a synchronous
+  notification cascade that interacts with Flutter 3.41.x `InheritedElement` dependency
+  tracking and fires an assertion. Fixed by:
+  - Moving `_editName` into `_DeviceDetailPageState` (stable `ConsumerState.ref`).
+  - Replacing `ref.invalidate(devicesStreamProvider)` with `apiDevicesRequestFastRefresh()`
+    (no stream teardown).
+  - Removing the unnecessary `ref.invalidate(deviceSettingsProvider)` — rename only
+    writes `device_name`, which is filtered from the settings display.
+  - Downgrading `_IdentityBlock` from `ConsumerWidget` to `StatelessWidget`; the rename
+    callback is now passed as `onRename: VoidCallback?`.
+
+- **`_DeviceSettingsCard.onSave` async-gap `ref` use** — the save callback called
+  `ref.invalidate(deviceSettingsProvider(serial))` after `await apiSettingsSet(…)` using
+  the `ConsumerWidget.build`-time `ref`. Fixed by adding `onSettingSaved: VoidCallback`
+  (passed from `_DeviceDetailPageState` via `this.ref`, which is stable across async gaps).
+
+- **Flash aborted on page navigation** — navigating away from the device detail page
+  during a flash called `dispose()` → `_dfuSub.cancel()`, which caused `sink.add()` to
+  return `Err` on the Rust side and abort `flash_task`. Resolved by the persistent
+  `DfuNotifier` (above).
+
+- **Device tile disappears during flash** — when the device entered bootloader mode or
+  rebooted after flashing, `find_devices()` briefly returned an empty list, removing the
+  tile from the overview. `_OverviewBody` now pins the flashing device using the
+  `DeviceInfo` stored in `DfuState` whenever it is absent from the current poll result.
+
+Changed
+
+- **Rename and flash buttons disabled during bootloader / active flash** — the rename
+  edit icon is disabled (`onPressed: null`, rendered grey) when the device is not in
+  Normal mode or a flash is in progress. The Firmware Update card's Select and Flash
+  buttons are disabled while any flash is active.
+
+- **Flash completion feedback changed from snackbar to persistent card** — the previous
+  2 s / 3 s auto-hiding snackbars are replaced by `_FirmwareTerminalCard`, which stays
+  visible until the user explicitly presses Dismiss. This ensures the result is seen even
+  if the user navigated away during the flash.
+
+---
+
 ## [Development] (2026-05-10)
 
 Fixed

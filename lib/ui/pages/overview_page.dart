@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attentio_desktop/ui/pages/device_detail_page.dart';
 import 'package:attentio_desktop/ui/utils/device_display.dart';
 import 'package:attentio_desktop/providers/devices_providers.dart';
+import 'package:attentio_desktop/providers/dfu_provider.dart';
 import 'package:attentio_desktop/ui/pages/settings_page.dart';
 import 'package:attentio_desktop/src/rust/api/device_api.dart';
 import 'package:attentio_desktop/providers/presets_provider.dart';
@@ -39,8 +40,20 @@ class _OverviewBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final normal = devices.where((d) => d.mode == 'Normal').length;
-    final bootloader = devices.where((d) => d.mode == 'Bootloader').length;
+    final dfuState = ref.watch(dfuProvider);
+
+    // Keep the flashing device pinned in the list even while it's momentarily
+    // absent from USB (entering bootloader or rebooting after flash).
+    List<DeviceInfo> displayDevices = devices;
+    if (dfuState.isActive && dfuState.deviceInfo != null) {
+      final flashingSerial = dfuState.serial!;
+      if (!devices.any((d) => d.serial == flashingSerial)) {
+        displayDevices = [...devices, dfuState.deviceInfo!];
+      }
+    }
+
+    final normal = displayDevices.where((d) => d.mode == 'Normal').length;
+    final bootloader = displayDevices.where((d) => d.mode == 'Bootloader').length;
 
     final settingsButton = AspectRatio(
       aspectRatio: 1,
@@ -69,7 +82,7 @@ class _OverviewBody extends ConsumerWidget {
               _SummaryCard(
                 icon: Icons.devices_other,
                 label: 'Connected',
-                value: devices.length.toString(),
+                value: displayDevices.length.toString(),
                 color: Theme.of(context).colorScheme.primary,
               ),
               _SummaryCard(
@@ -137,7 +150,7 @@ class _OverviewBody extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: devices.isEmpty
+          child: displayDevices.isEmpty
               ? const Center(
                   child: Text(
                     'No devices detected. Ensure your device(s) are connected.',
@@ -147,10 +160,10 @@ class _OverviewBody extends ConsumerWidget {
                   thumbVisibility: true,
                   child: ListView.separated(
                     primary: true,
-                    itemCount: devices.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemCount: displayDevices.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, i) =>
-                        _OverviewDeviceTile(device: devices[i]),
+                        _OverviewDeviceTile(device: displayDevices[i]),
                   ),
                 ),
         ),
@@ -216,28 +229,38 @@ class _OverviewDeviceTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final dfuState = ref.watch(dfuProvider);
+    final bool isFlashing = dfuState.serial == device.serial && dfuState.isActive;
+    final DfuProgress? dfuProgress =
+        dfuState.serial == device.serial ? dfuState.progress : null;
+
     final isNormal = device.mode == 'Normal';
-    final statusAsync = isNormal
+    // Suppress live status and favorites polling while a flash is in progress
+    // to avoid spurious reconnect errors and colour swatch flickering.
+    final statusAsync = (isNormal && !isFlashing)
         ? ref.watch(deviceStatusStreamProvider(device.serial))
         : const AsyncValue<DeviceStatus?>.data(null);
 
     final name = deviceDisplayName(device);
 
-    final favorites = isNormal
+    final favorites = (isNormal && !isFlashing)
         ? ref.watch(deviceFavoritePresetsProvider(device.serial))
         : <DevicePreset>[];
 
     return Card(
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => DeviceDetailPage(device: device),
-            ),
-          );
-        },
-        child: Padding(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DeviceDetailPage(device: device),
+                ),
+              );
+            },
+            child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -270,7 +293,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
                             ),
                           ],
                           const SizedBox(width: 12),
-                          _ModeBadge(mode: device.mode),
+                          _ModeBadge(mode: device.mode, isFlashing: isFlashing),
                           if (isNormal) ...[
                             const SizedBox(width: 12),
                             _StatusSummary(statusAsync: statusAsync),
@@ -310,7 +333,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
                                   ),
                                   const SizedBox(width: 12),
                                 ],
-                                _ModeBadge(mode: device.mode),
+                                _ModeBadge(mode: device.mode, isFlashing: isFlashing),
                                 if (isNormal) ...[
                                   const SizedBox(width: 12),
                                   Flexible(
@@ -355,7 +378,7 @@ class _OverviewDeviceTile extends ConsumerWidget {
                           padding: const EdgeInsets.only(left: 48, top: 8),
                           child: Row(
                             children: [
-                              _ModeBadge(mode: device.mode),
+                              _ModeBadge(mode: device.mode, isFlashing: isFlashing),
                               if (isNormal) ...[
                                 const SizedBox(width: 12),
                                 Flexible(
@@ -377,6 +400,16 @@ class _OverviewDeviceTile extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+          if (isFlashing)
+            LinearProgressIndicator(
+              value: dfuProgress?.phase == 'flashing' &&
+                      (dfuProgress?.bytesTotal ?? BigInt.zero) > BigInt.zero
+                  ? dfuProgress!.bytesWritten.toDouble() /
+                    dfuProgress.bytesTotal.toDouble()
+                  : null,
+            ),
+        ],
       ),
     );
   }
@@ -555,22 +588,30 @@ class _ColorSwatch extends StatelessWidget {
 }
 
 class _ModeBadge extends StatelessWidget {
-  const _ModeBadge({required this.mode});
+  const _ModeBadge({required this.mode, this.isFlashing = false});
 
   final String mode;
+  final bool isFlashing;
 
   @override
   Widget build(BuildContext context) {
-    Color bg;
-    switch (mode) {
-      case 'Normal':
-        bg = Colors.green.shade600;
-        break;
-      case 'Bootloader':
-        bg = Colors.orange.shade700;
-        break;
-      default:
-        bg = Colors.grey.shade600;
+    final Color bg;
+    final String label;
+    if (isFlashing) {
+      bg = Colors.amber.shade700;
+      label = 'Flashing';
+    } else {
+      label = mode;
+      switch (mode) {
+        case 'Normal':
+          bg = Colors.green.shade600;
+          break;
+        case 'Bootloader':
+          bg = Colors.orange.shade700;
+          break;
+        default:
+          bg = Colors.grey.shade600;
+      }
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -579,7 +620,7 @@ class _ModeBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
-        mode,
+        label,
         style: const TextStyle(color: Colors.white, fontSize: 12),
       ),
     );
@@ -603,7 +644,7 @@ class _StatusSummary extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         ),
-        error: (_, __) =>
+        error: (_, _) =>
             const Icon(Icons.error_outline, color: Colors.redAccent),
         data: (s) {
           if (s == null) return const SizedBox.shrink();

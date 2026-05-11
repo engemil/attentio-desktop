@@ -119,7 +119,6 @@ class TrayService with TrayListener, WindowListener {
         break;
       case 'quit':
         exit(0);
-        break;
     }
   }
 }

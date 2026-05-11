@@ -35,6 +35,7 @@ attentio-desktop/
 │   │   ├── pages/                    # Full-screen views
 │   │   │   ├── overview_page.dart    # Landing page: summary cards + tappable device tiles
 │   │   │   ├── device_detail_page.dart  # Per-device control panel
+│   │   │   ├── monitor_page.dart     # Real-time two-pane serial/protocol monitor
 │   │   │   └── settings_page.dart    # Appearance / Application / About
 │   │   ├── widgets/                  # Reusable UI components
 │   │   │   ├── app_shell.dart        # Top-level scaffold (wraps OverviewPage)
@@ -44,6 +45,8 @@ attentio-desktop/
 │   │       └── device_display.dart   # Canonical device display name resolver
 │   ├── providers/                    # Riverpod state management
 │   │   ├── devices_providers.dart    # Device list stream, per-device status, metadata, settings
+│   │   ├── dfu_provider.dart         # DFU flash state (app-lifetime, survives navigation)
+│   │   ├── monitor_providers.dart    # Serial (CDC0) + protocol (CDC1) monitor streams
 │   │   ├── presets_provider.dart     # Per-device colour presets with SharedPreferences persistence
 │   │   └── settings_provider.dart    # App settings (theme, accent, tray, autostart) persistence
 │   ├── services/                     # Platform integrations and side-effect services
@@ -53,7 +56,8 @@ attentio-desktop/
 │   ├── Cargo.toml
 │   └── src/api/                      # Functions/structs visible to Dart
 │       ├── mod.rs
-│       └── device_api.rs             # Persistent per-device ApClient cache + FFI surface
+│       ├── device_api.rs             # Persistent per-device ApClient cache + FFI surface
+│       └── monitor_api.rs            # Serial + AP protocol monitor streams
 ├── rust_builder/                     # Cargokit FFI plugin glue (do not edit)
 ├── linux/                            # GTK runner
 ├── macos/, windows/                  # Scaffolded, not yet supported
