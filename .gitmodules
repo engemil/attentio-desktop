@@ -1,0 +1,7 @@
+[submodule "attentio-cli"]
+	path = attentio-cli
+	url = https://github.com/engemil/attentio-cli.git
+	branch = dev
+[submodule "flutter"]
+	path = flutter
+	url = https://github.com/flutter/flutter.git

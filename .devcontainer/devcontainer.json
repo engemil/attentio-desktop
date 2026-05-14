@@ -5,6 +5,7 @@
     "shutdownAction": "none",
     "workspaceFolder": "/workspace",
     "remoteUser": "engemil",
+    "postCreateCommand": "cd attentio-desktop && git submodule update --init --recursive && flutter doctor",
     "customizations": {
         "vscode": {
             "extensions": [

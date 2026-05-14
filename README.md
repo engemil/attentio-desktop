@@ -8,6 +8,7 @@ Attentio Desktop is a graphical user interface (GUI) for managing Attentio devic
 
 - [Architecture](#architecture)
 - [Project layout](#project-layout)
+- [Cloning](#cloning)
 - [VS Code Devcontainer (Recommended)](#vs-code-devcontainer-recommended)
 - [Prerequisites (Manual Setup)](#prerequisites-manual-setup)
 - [Setup](#setup)
@@ -65,15 +66,36 @@ attentio-desktop/
 └── integration_test/                 # End-to-end tests
 ```
 
+## Cloning
+
+This repo uses **git submodules** to pin the Flutter SDK (3.41.7) and the `attentio-cli` Rust backend, so a single clone gives you everything you need:
+
+```bash
+git clone --recurse-submodules https://github.com/engemil/attentio-desktop.git
+```
+
+If you already cloned without `--recurse-submodules`, initialise the submodules afterwards:
+
+```bash
+git submodule update --init --recursive
+```
+
+To pull a newer revision of `attentio-cli` (tracking its `dev` branch):
+
+```bash
+git submodule update --remote attentio-cli
+git add attentio-cli && git commit -m "Bump attentio-cli submodule"
+```
+
 ## VS Code Devcontainer (Recommended)
 
-The easiest way to get started is by using the included **Devcontainer**. It automatically sets up Flutter (pinned version), Rust, and all required Linux GTK/Wayland GUI dependencies inside a container without modifying your host OS.
+The easiest way to get started is by using the included **Devcontainer**. It builds a Linux toolchain (Rust, GTK/Wayland deps, `flutter_rust_bridge_codegen`) inside a container without modifying your host OS, and reuses the Flutter SDK from the `flutter/` submodule.
 
 1. Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension in VS Code.
 2. Open the `attentio-desktop` folder in VS Code.
 3. A prompt will appear: **"Folder contains a Dev Container configuration file. Reopen folder to develop in a container."** Click **Reopen in Container**.
    - *(Alternatively, open the Command Palette (`Ctrl+Shift+P`) and run `Dev Containers: Rebuild and Reopen in Container`)*.
-4. The container will build automatically. Once finished, you will have `flutter`, `cargo`, and `flutter_rust_bridge_codegen` ready on your `PATH`.
+4. The container will build automatically. The `postCreateCommand` then initialises submodules (if needed) and runs `flutter doctor` to bootstrap the Dart SDK. Once finished, you will have `flutter`, `cargo`, and `flutter_rust_bridge_codegen` ready on your `PATH`.
 
 The devcontainer mounts your `/dev` folder and X11/Wayland socket so the app can talk to USB devices and render its window on your host desktop. It also sets `LIBGL_ALWAYS_SOFTWARE=1` and `GDK_RENDERING=image` to avoid GLX issues with hosts running NVIDIA proprietary drivers.
 
@@ -87,15 +109,11 @@ If you would rather set up the toolchain on your host machine:
    source "$HOME/.cargo/env"
    ```
 
-2. **Flutter SDK (pinned to 3.41.7):**
+2. **Flutter SDK:** provided by the `flutter/` submodule (pinned to 3.41.7). Add its `bin/` directory to your `PATH`:
    ```bash
-   git clone --depth 1 --branch 3.41.7 https://github.com/flutter/flutter.git ~/flutter
-   export PATH="$HOME/flutter/bin:$PATH"
+   export PATH="$PWD/flutter/bin:$HOME/.cargo/bin:$PATH"
    ```
-   Add the following to your `~/.bashrc` (or `~/.zshrc`) to persist across sessions:
-   ```bash
-   export PATH="$HOME/.cargo/bin:$HOME/flutter/bin:$PATH"
-   ```
+   Persist across sessions by appending the line above to your `~/.bashrc` (or `~/.zshrc`) with the absolute path to your checkout.
 
 3. **Linux OS Dependencies:**
    ```bash
@@ -103,11 +121,13 @@ If you would rather set up the toolchain on your host machine:
    sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev
    ```
 
+   **Windows OS Dependencies:** install Visual Studio 2022 Build Tools with the **Desktop development with C++** workload (provides MSVC + Windows SDK + CMake). No libusb install needed — `libusb1-sys` vendors and builds it from source via MSVC.
+
 ## Setup
 
 1. Install the `flutter_rust_bridge` code generator (needed whenever the Rust API changes):
    ```bash
-   cargo install flutter_rust_bridge_codegen
+   cargo install flutter_rust_bridge_codegen --version 2.12.0 --locked
    ```
 2. Fetch Flutter dependencies:
    ```bash
@@ -132,8 +152,14 @@ flutter_rust_bridge_codegen generate
 
 Run the app in debug mode (hot-reload enabled):
 
+Linux:
 ```bash
 flutter run -d linux
+```
+
+Windows:
+```bash
+flutter run -d windows on Windows 11
 ```
 
 ## Testing
