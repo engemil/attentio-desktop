@@ -159,7 +159,7 @@ flutter run -d linux
 
 Windows:
 ```bash
-flutter run -d windows on Windows 11
+flutter run -d windows
 ```
 
 ## Testing
