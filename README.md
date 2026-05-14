@@ -2,7 +2,7 @@
 
 Attentio Desktop is a graphical user interface (GUI) for managing Attentio devices. It is built using **Flutter** for a natively compiled frontend, and **Rust** for a high-performance, safe backend core. It heavily reuses the core logic of the [`attentio-cli`](github.com/engemil/attentio-cli) tool via [`flutter_rust_bridge`](https://github.com/fzyzcjy/flutter_rust_bridge).
 
-> **Platform support:** Linux is the primary target and is actively tested. The `macos/` and `windows/` folders are scaffolded by Flutter but are **not yet officially supported** — expect rough edges if you try them.
+> **Platform support:** Linux is the primary target and is actively tested. **Windows 11** is supported but only manually tested — expect occasional rough edges. **macOS** is scaffolded by Flutter but not yet supported.
 
 ## Table of Contents
 
@@ -101,7 +101,9 @@ The devcontainer mounts your `/dev` folder and X11/Wayland socket so the app can
 
 ## Prerequisites (Manual Setup)
 
-If you would rather set up the toolchain on your host machine:
+If you would rather set up the toolchain on your host machine, follow the section for your OS. The Flutter SDK itself is provided by the `flutter/` submodule on both platforms (pinned to 3.41.7) — you only need to add its `bin/` directory to your `PATH`.
+
+### Linux
 
 1. **Rust & Cargo:**
    ```bash
@@ -109,19 +111,45 @@ If you would rather set up the toolchain on your host machine:
    source "$HOME/.cargo/env"
    ```
 
-2. **Flutter SDK:** provided by the `flutter/` submodule (pinned to 3.41.7). Add its `bin/` directory to your `PATH`:
+2. **Flutter on PATH:**
    ```bash
    export PATH="$PWD/flutter/bin:$HOME/.cargo/bin:$PATH"
    ```
    Persist across sessions by appending the line above to your `~/.bashrc` (or `~/.zshrc`) with the absolute path to your checkout.
 
-3. **Linux OS Dependencies:**
+3. **OS Dependencies:**
    ```bash
    sudo apt-get update
    sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev
    ```
 
-   **Windows OS Dependencies:** install Visual Studio 2022 Build Tools with the **Desktop development with C++** workload (provides MSVC + Windows SDK + CMake). No libusb install needed — `libusb1-sys` vendors and builds it from source via MSVC.
+### Windows 11
+
+Run these in **PowerShell** (the default shell on Windows 11). `winget install` will prompt for admin elevation.
+
+1. **Rust & Cargo:**
+   ```powershell
+   winget install --id Rustlang.Rustup -e
+   ```
+   Close and reopen PowerShell so `cargo` and `rustc` land on `PATH`. The MSVC ABI is selected by default — this is what you want.
+
+2. **Flutter on PATH** (persisted for future shells):
+   ```powershell
+   $flutterBin = "$PWD\flutter\bin"
+   [Environment]::SetEnvironmentVariable(
+       "Path",
+       "$flutterBin;$env:USERPROFILE\.cargo\bin;$([Environment]::GetEnvironmentVariable('Path','User'))",
+       "User")
+   # …then close and reopen PowerShell, or for the current session also run:
+   $env:Path = "$flutterBin;$env:USERPROFILE\.cargo\bin;$env:Path"
+   ```
+
+3. **OS Dependencies:** Visual Studio 2022 Build Tools with the **Desktop development with C++** workload (MSVC + Windows 10/11 SDK + CMake):
+   ```powershell
+   winget install --id Microsoft.VisualStudio.2022.BuildTools -e `
+       --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+   ```
+   No separate libusb install is needed — `libusb1-sys` vendors and builds it from source via MSVC.
 
 ## Setup
 
@@ -172,8 +200,14 @@ flutter test
 
 Integration tests (boots the real Rust bridge; works without a device attached — verifies either the device list or empty state renders):
 
+Linux:
 ```bash
 flutter test integration_test/simple_test.dart -d linux
+```
+
+Windows:
+```powershell
+flutter test integration_test/simple_test.dart -d windows
 ```
 
 ## Logging & Diagnostics
@@ -186,24 +220,43 @@ message to Dart`) can occasionally surface during stream teardown on app
 shutdown or USB unplug. They are cosmetic. To silence them while keeping
 your own backend warnings visible:
 
+Linux:
 ```bash
 RUST_LOG=warn,flutter_rust_bridge::rust2dart=error flutter run -d linux
 ```
 
+Windows (PowerShell):
+```powershell
+$env:RUST_LOG = "warn,flutter_rust_bridge::rust2dart=error"
+flutter run -d windows
+```
+
 To enable verbose stream-lifecycle traces (`frb_diag:` events) for debugging:
 
+Linux:
 ```bash
 RUST_LOG=warn,rust_lib_attentio_desktop=trace flutter run -d linux
 ```
 
+Windows (PowerShell):
+```powershell
+$env:RUST_LOG = "warn,rust_lib_attentio_desktop=trace"
+flutter run -d windows
+```
+
 ## Building for Release
 
+Linux:
 ```bash
 flutter build linux
 ```
+Output: `build/linux/x64/release/bundle/attentio_desktop`
 
-The optimised binary and its assets will be at:
-`build/linux/x64/release/bundle/attentio_desktop`
+Windows:
+```powershell
+flutter build windows
+```
+Output: `build\windows\x64\runner\Release\attentio_desktop.exe` (plus accompanying DLLs and `data/` folder — ship the whole `Release/` directory).
 
 ## License
 
