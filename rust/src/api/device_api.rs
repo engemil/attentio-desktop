@@ -89,10 +89,18 @@ pub fn init_app() {
     // Default filter is `warn` so behaviour is unchanged out of the box; users
     // who want to silence the FRB warning can run with e.g.
     //   RUST_LOG=warn,flutter_rust_bridge::rust2dart=error flutter run -d linux
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn"),
-    )
-    .try_init();
+    // Install a tracing subscriber that reads RUST_LOG and outputs to stderr.
+    // Handles tracing events from attentio-cli (tracing::debug! etc.).
+    // RUST_LOG=trace shows everything; default is warn.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
+
+    // Bridge log events to tracing so mio_serial, FRB etc. are also visible.
+    let _ = tracing_log::LogTracer::init();
 
     flutter_rust_bridge::setup_default_user_utils();
 }
