@@ -53,13 +53,7 @@ class TrayService with TrayListener, WindowListener {
   Future<void> _installTray() async {
     if (_trayInstalled) return;
     try {
-      // Use a small built-in icon path; fall back to empty if unavailable.
-      // Users can replace this with a packaged asset later.
-      await trayManager.setIcon(
-        Platform.isWindows
-            ? 'windows/runner/resources/app_icon.ico'
-            : 'linux/runner/resources/app_icon.png',
-      );
+      await trayManager.setIcon('assets/branding/app_icon.png');
     } catch (_) {
       // Icon file might not exist yet; carry on without a custom icon.
     }

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Attentio Desktop
+Comment=Desktop GUI for managing Attentio devices
+Exec=attentio_desktop
+Icon=com.example.attentio_desktop
+StartupWMClass=Com.example.attentio_desktop
+Terminal=false
+Type=Application
+Categories=Utility;

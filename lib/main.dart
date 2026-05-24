@@ -17,6 +17,14 @@ Future<void> main() async {
   if (!Platform.isAndroid && !Platform.isIOS) {
     try {
       await windowManager.ensureInitialized();
+      // Window icon (taskbar / title bar). On Windows the embedded .ico in
+      // Runner.rc also drives this; on Linux this is what makes the icon
+      // show in GTK shells during dev runs.
+      try {
+        await windowManager.setIcon('assets/branding/app_icon.png');
+      } catch (_) {
+        // Asset may be unavailable in some test environments — non-fatal.
+      }
       // Enforce a minimum window size so the UI never collapses below a
       // tested, usable footprint. 360×480 is a phone-portrait baseline:
       // below 360 px wide the AppBar title and first card start to clip.

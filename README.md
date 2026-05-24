@@ -123,6 +123,8 @@ If you would rather set up the toolchain on your host machine, follow the sectio
    sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev
    ```
 
+> Regenerating app icons is a design-time-only step and is not needed for a normal build — see [`assets/branding/README.md`](assets/branding/README.md) for the workflow and the (optional) ImageMagick dependency.
+
 ### Windows 11
 
 Run these in **PowerShell** (the default shell on Windows 11). `winget install` will prompt for admin elevation.

@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y \
     libcanberra-gtk-module \
     libcanberra-gtk3-module \
     libayatana-appindicator3-dev \
+    # ImageMagick: only needed when regenerating app icons from
+    # assets/branding/app_icon_master.png — see assets/branding/README.md
+    imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up locale

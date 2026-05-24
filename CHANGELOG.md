@@ -20,6 +20,18 @@ Added
 
 - **Filtering** of the **GET_STATUS** command in the Protocol (CDC1) window, in the monitoring page.
 
+- **Unified app icon across platforms** — every platform icon (Windows `.ico`,
+  macOS `AppIcon.appiconset`, Linux `hicolor` theme, GTK runner PNG, and the
+  Flutter runtime asset) is now regenerated from a single 1024×1024 master
+  at `assets/branding/app_icon_master.png` via
+  `assets/branding/regenerate-icons.sh`. The Flutter window and tray now load
+  the icon from `assets/branding/app_icon.png` instead of platform-specific
+  paths. See `assets/branding/README.md` for the regeneration workflow.
+
+- **Linux desktop entry + hicolor theme icons** — new
+  `linux/com.example.attentio_desktop.desktop` and `linux/hicolor/` tree so
+  the app integrates with Linux application launchers when installed.
+
 ## [Development] (2026-05-16)
 
 Added
