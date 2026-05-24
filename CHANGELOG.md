@@ -14,6 +14,12 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-05-24)
+
+Added
+
+- **Filtering** of the **GET_STATUS** command in the Protocol (CDC1) window, in the monitoring page.
+
 ## [Development] (2026-05-16)
 
 Added

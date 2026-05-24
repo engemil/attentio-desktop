@@ -43,6 +43,17 @@ class _MonitorPageState extends State<MonitorPage> {
   bool _serialAutoScroll = true;
   bool _protocolAutoScroll = true;
 
+  // ── Filter ──────────────────────────────────────────────────────────────
+  // Hide background `→ GET_STATUS` / matching `← OK` reply from the protocol
+  // pane. The parent Device Detail page keeps polling `get_status` every 2 s
+  // to feed its live status header; on the Monitor page that traffic drowns
+  // out anything else of interest. Default off — user opts in.
+  bool _filterGetStatus = false;
+  // Pair-state: we've just suppressed a `→ GET_STATUS` and are waiting to
+  // suppress its matching `← OK` / `← ERROR` reply. CDC1 is strictly
+  // request/response so a single bool is enough.
+  bool _suppressNextOkReply = false;
+
   // ── Streams ─────────────────────────────────────────────────────────────
   StreamSubscription<String>? _serialSub;
   StreamSubscription<String>? _protocolSub;
@@ -111,6 +122,23 @@ class _MonitorPageState extends State<MonitorPage> {
 
     _protocolSub = apiMonitorProtocolStart(serial: widget.serial).listen(
       (line) {
+        if (_filterGetStatus) {
+          if (line.startsWith('→ GET_STATUS')) {
+            _suppressNextOkReply = true;
+            return;
+          }
+          if (_suppressNextOkReply &&
+              (line.startsWith('← OK') || line.startsWith('← ERROR'))) {
+            _suppressNextOkReply = false;
+            return;
+          }
+          // Any other outgoing command means our pairing got lost
+          // (e.g. a disconnect ate the OK). Clear so we don't eat
+          // someone else's reply.
+          if (line.startsWith('→')) {
+            _suppressNextOkReply = false;
+          }
+        }
         setState(() {
           if (line == '[listening for protocol traffic]') {
             _protocolConnected = true;
@@ -272,6 +300,11 @@ class _MonitorPageState extends State<MonitorPage> {
                   setState(() => _protocolAutoScroll = true);
                   _maybeAutoScroll(_protocolScrollCtrl, true);
                 },
+                filterActive: _filterGetStatus,
+                onToggleFilter: () => setState(() {
+                  _filterGetStatus = !_filterGetStatus;
+                  _suppressNextOkReply = false;
+                }),
               ),
             ),
             const Divider(height: 1),
@@ -300,6 +333,7 @@ class _MonitorPageState extends State<MonitorPage> {
               serialLineCount: _serialLines.length,
               protocolLineCount: _protocolLines.length,
               focusedPane: _focusedPane,
+              protocolFilterActive: _filterGetStatus,
             ),
           ],
         ),
@@ -381,6 +415,8 @@ class _MonitorPane extends StatelessWidget {
     required this.onTap,
     required this.onClear,
     required this.onScrollToBottom,
+    this.filterActive,
+    this.onToggleFilter,
   });
 
   final String title;
@@ -392,6 +428,10 @@ class _MonitorPane extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
   final VoidCallback onScrollToBottom;
+  // Optional GET_STATUS filter toggle. When `onToggleFilter` is null, the
+  // filter button is not rendered (used by the Serial pane).
+  final bool? filterActive;
+  final VoidCallback? onToggleFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -431,6 +471,22 @@ class _MonitorPane extends StatelessWidget {
                     ),
                   ),
                   const Spacer(),
+                  if (onToggleFilter != null)
+                    IconButton(
+                      icon: Icon(
+                        filterActive == true
+                            ? Icons.filter_alt
+                            : Icons.filter_alt_off,
+                        size: 18,
+                      ),
+                      tooltip: filterActive == true
+                          ? 'Hiding background GET_STATUS polling — click to show all traffic'
+                          : 'Showing all traffic — click to hide background GET_STATUS polling',
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 28, minHeight: 28),
+                      onPressed: onToggleFilter,
+                    ),
                   if (!autoScroll)
                     IconButton(
                       icon: const Icon(Icons.vertical_align_bottom, size: 18),
@@ -536,6 +592,7 @@ class _StatusBar extends StatelessWidget {
     required this.serialLineCount,
     required this.protocolLineCount,
     required this.focusedPane,
+    required this.protocolFilterActive,
   });
 
   final String serial;
@@ -543,6 +600,7 @@ class _StatusBar extends StatelessWidget {
   final int serialLineCount;
   final int protocolLineCount;
   final int focusedPane;
+  final bool protocolFilterActive;
 
   @override
   Widget build(BuildContext context) {
@@ -576,7 +634,9 @@ class _StatusBar extends StatelessWidget {
             const SizedBox(width: 16),
             Text(focusedPane == 0 ? 'Focus: Protocol' : 'Focus: Serial'),
             const SizedBox(width: 16),
-            Text('P:$protocolLineCount  S:$serialLineCount'),
+            Text(
+              'P:$protocolLineCount${protocolFilterActive ? ' (filtered)' : ''}  S:$serialLineCount',
+            ),
             const Spacer(),
             Flexible(
               child: Text(
