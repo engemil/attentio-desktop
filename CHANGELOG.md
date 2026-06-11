@@ -14,6 +14,68 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-06-11)
+
+BLE connectivity. The desktop app can now discover, connect to, and control
+Attentio devices over **Bluetooth Low Energy**, not just USB-CDC. The device
+already serves the Attentio Protocol over a GATT service; this wires the app's
+backend and UI to that transport via the `attentio-cli` BLE support. BLE
+verification runs on a Linux/BlueZ host (no BLE radio in the devcontainer).
+
+Added
+
+- **BLE device discovery on the overview** — the header's old "Refresh" button
+  is now **Discover**, which scans USB *and* BLE together, and a new **Bluetooth**
+  toggle *arms* BLE (the scan itself runs on Discover; disarming drops BLE
+  devices from the list). Each device tile shows a **transport indicator**
+  (USB / Bluetooth icon + label) and, for BLE, its **paired** state. New
+  `bleEnabledProvider` / `bleScanProvider` (`lib/providers/devices_providers.dart`),
+  UI in `lib/ui/pages/overview_page.dart`.
+
+- **Transport-aware control path** — `rust/src/api/device_api.rs` gained
+  `open_client_for_key`, which routes a cached device key to the BLE transport
+  (`attentio::device::ble::open` + `ApClient::from_parts` via a
+  `BleSelector::Address`) when the key identifies a BLE device, and to USB/serial
+  otherwise. A process-global `ble_registry` (BD_ADDR → address) is populated by
+  `device_to_info` as devices are discovered, with a `looks_like_mac` fallback
+  for control calls that race the first scan emit. `with_client` opens through it
+  on both first-open and the evict-and-retry path, and `AttentioError::Ble(_)` is
+  treated as a transport error so a dropped BLE link reopens (re-running the CLI
+  bond auto-heal). The per-device client cache, the status stream, and every
+  `api_*` control function inherit BLE support unchanged.
+
+- **BLE device control from the detail page** — tapping a BLE tile now opens the
+  device detail page (previously a "coming soon" snackbar). The detail page is
+  keyed by `device.serial` (the BD_ADDR for BLE) and falls back to the discovered
+  device when it is absent from the USB poll, so claim / set-RGB / brightness /
+  power / settings all work over BLE.
+
+- **Live status for paired BLE devices on the overview** — a *paired* BLE tile
+  now shows the same live colour swatch, Standalone/Remote + brightness summary,
+  and favourite-preset dots as a USB tile (it auto-connects, which a stored bond
+  makes safe). An *unpaired* BLE device still appears (with its "Not paired"
+  badge) but is not auto-connected from the list — opening it connects/pairs.
+
+- **Live BLE signal strength (RSSI)** — the detail page's Live Status block shows
+  a `Signal (RSSI) … dBm` row for BLE devices, updating on the same 2 s cadence
+  as the rest of the status (hidden for USB). Read from the connected peripheral
+  via the new `ApClient::ble_rssi` and carried on the FRB `DeviceStatus.rssi`
+  (filled by a `status_with_rssi` helper across all status fetch sites).
+
+- **`api_scan_ble()`** — on-demand BLE scan (~3 s), kept off the USB poll hot path
+  so the live device list isn't slowed by a BLE scan every tick.
+
+Changed
+
+- **`DeviceInfo` FRB struct** gained `transport`, `ble_address`, and `paired`;
+  `DeviceStatus` gained an optional `rssi`. Bindings regenerated
+  (`rust/src/frb_generated.rs` + `lib/src/rust/api/device_api.dart`).
+
+- **`attentio-cli` submodule bumped** to the revision carrying the BLE transport
+  (`--ble`), unified USB+BLE listing, bond auto-heal, and `ApClient::ble_rssi`.
+
+---
+
 ## [Development] (2026-05-24)
 
 Added

@@ -4,6 +4,8 @@ Attentio Desktop is a graphical user interface (GUI) for managing Attentio devic
 
 > **Platform support:** Linux is the primary target and is actively tested. **Windows 11** is supported but only manually tested — expect occasional rough edges. **macOS** is scaffolded by Flutter but not yet supported.
 
+> **Connectivity (USB / BLE):** devices can be reached over **USB-CDC** (default) or **Bluetooth Low Energy**. On the overview, press **Discover** to scan for USB devices, and enable the **Bluetooth** toggle to also include BLE devices in the scan. BLE pairing/bonding is currently verified on **Linux/BlueZ** only (the first connection performs Just-Works pairing); see the [`attentio-cli`](github.com/engemil/attentio-cli) BLE notes for the underlying transport.
+
 ## Table of Contents
 
 - [Architecture](#architecture)
@@ -120,8 +122,11 @@ If you would rather set up the toolchain on your host machine, follow the sectio
 3. **OS Dependencies:**
    ```bash
    sudo apt-get update
-   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev
+   sudo apt-get install -y clang ninja-build libgtk-3-dev pkg-config libayatana-appindicator3-dev libudev-dev libusb-1.0-0-dev bluez
    ```
+
+   > `bluez` (with a running `bluetooth` service) is required for the BLE
+   > transport; USB-only use does not need it.
 
 > Regenerating app icons is a design-time-only step and is not needed for a normal build — see [`assets/branding/README.md`](assets/branding/README.md) for the workflow and the (optional) ImageMagick dependency.
 

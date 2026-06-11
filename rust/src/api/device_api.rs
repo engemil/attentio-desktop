@@ -1,5 +1,8 @@
 use anyhow::Result;
-use attentio::device::discovery::{find_devices, cache_remember, DeviceMode};
+use attentio::device::ble::{open as ble_open, BleSelector};
+use attentio::device::discovery::{
+    find_ble_devices, find_devices, cache_remember, DeviceMode, Transport,
+};
 use attentio::error::AttentioError;
 use attentio::protocol::{open_client, ApClient};
 use std::collections::HashMap;
@@ -30,6 +33,10 @@ pub struct DeviceStatus {
     pub standalone_brightness_raw: u8,
     pub anim_type: u8,
     pub session_id: u16,
+    /// Live BLE signal strength (dBm); `None` for USB and until the adapter
+    /// surfaces an RSSI. Populated separately from the AP status (it is a
+    /// transport property, not part of the device's AP `DeviceStatus`).
+    pub rssi: Option<i32>,
 }
 
 impl From<attentio::protocol::client::DeviceStatus> for DeviceStatus {
@@ -48,8 +55,20 @@ impl From<attentio::protocol::client::DeviceStatus> for DeviceStatus {
             standalone_brightness_raw: s.standalone_brightness_raw,
             anim_type: s.anim_type,
             session_id: s.session_id,
+            // RSSI is not part of the AP status; filled in by `status_with_rssi`.
+            rssi: None,
         }
     }
+}
+
+/// Fetch the device's AP status and, on BLE, its live RSSI from the same locked
+/// client, returning a combined [`DeviceStatus`]. On USB the RSSI stays `None`.
+async fn status_with_rssi(c: &mut ApClient) -> Result<DeviceStatus, AttentioError> {
+    let status = c.get_status().await?;
+    let rssi = c.ble_rssi().await;
+    let mut ds: DeviceStatus = status.into();
+    ds.rssi = rssi.map(|v| v as i32);
+    Ok(ds)
 }
 
 /// Lightweight summary of a connected device (used by device list views).
@@ -68,6 +87,12 @@ pub struct DeviceInfo {
     pub serial_port: Option<String>,
     /// Attentio Protocol port path (CDC1), e.g. "/dev/ttyACM1".
     pub protocol_port: Option<String>,
+    /// Transport this device was discovered over: "USB" or "BLE".
+    pub transport: String,
+    /// BLE address (BD_ADDR), present only for BLE-discovered devices.
+    pub ble_address: Option<String>,
+    /// BLE pairing state (Linux/BlueZ only); `None` for USB or when unknown.
+    pub paired: Option<bool>,
 }
 
 /// A single key-value entry from metadata or settings.
@@ -151,6 +176,68 @@ pub(crate) fn slot_for(serial: &str) -> SharedSlot {
         .clone()
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BLE device registry + transport-aware open
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// USB devices are keyed in the client cache by their chip serial; BLE devices
+// are keyed by their BD_ADDR (which is what `find_ble_devices` stores in the
+// `serial` field). The cache itself is transport-agnostic — only the *open*
+// path differs. This registry records, for each BLE device key, the address
+// to reconnect with, so `open_client_for_key` can route a key to the BLE
+// transport. It is populated by `device_to_info`, through which every
+// discovered device (USB or BLE) flows.
+
+fn ble_registry() -> &'static StdMutex<HashMap<String, String>> {
+    static MAP: OnceLock<StdMutex<HashMap<String, String>>> = OnceLock::new();
+    MAP.get_or_init(|| StdMutex::new(HashMap::new()))
+}
+
+fn register_ble(serial: &str, address: &str) {
+    ble_registry()
+        .lock()
+        .expect("ble-registry poisoned")
+        .insert(serial.to_string(), address.to_string());
+}
+
+/// Is `s` shaped like a BD_ADDR (`XX:XX:XX:XX:XX:XX`)? Used as a fallback so a
+/// control call that races the first scan emit (registry not yet populated)
+/// still routes to BLE, since BLE device keys *are* their address.
+fn looks_like_mac(s: &str) -> bool {
+    let parts: Vec<&str> = s.split(':').collect();
+    parts.len() == 6
+        && parts
+            .iter()
+            .all(|p| p.len() == 2 && p.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// The BLE address to reconnect with for `key`, if it identifies a BLE device.
+fn ble_address_for(key: &str) -> Option<String> {
+    if let Some(addr) = ble_registry()
+        .lock()
+        .expect("ble-registry poisoned")
+        .get(key)
+    {
+        return Some(addr.clone());
+    }
+    looks_like_mac(key).then(|| key.to_string())
+}
+
+/// Open an [`ApClient`] for a resolved device key, routing to the BLE transport
+/// when the key identifies a BLE device and to USB/serial otherwise. The BLE
+/// path reuses `attentio::device::ble::open` + `ApClient::from_parts` — the same
+/// machinery the CLI's `--ble` flag drives — so connect/pair/auto-heal behave
+/// identically to the CLI.
+async fn open_client_for_key(key: &str) -> Result<ApClient> {
+    if let Some(address) = ble_address_for(key) {
+        let (reader, writer, guard) = ble_open(&BleSelector::Address(address))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        return Ok(ApClient::from_parts(reader, writer, guard));
+    }
+    open_client(Some(key)).await.map_err(|e| anyhow::anyhow!(e))
+}
+
 /// Resolve `serial = None` to the serial of the first available device.
 pub(crate) async fn resolve_serial(serial: Option<String>) -> Result<String> {
     if let Some(s) = serial {
@@ -179,6 +266,9 @@ fn is_transport_error(err: &AttentioError) -> bool {
             | AttentioError::Timeout { .. }
             | AttentioError::DeviceNotFound
             | AttentioError::DeviceSerialNotFound { .. }
+            // A BLE error mid-session means the link dropped; evicting and
+            // reopening re-scans/reconnects (and runs the bond auto-heal).
+            | AttentioError::Ble(_)
     )
 }
 
@@ -195,11 +285,9 @@ where
     let slot = slot_for(&resolved);
     let mut guard = slot.lock().await;
 
-    // Ensure we have an open client.
+    // Ensure we have an open client (USB or BLE, depending on the key).
     if guard.is_none() {
-        let client = open_client(Some(resolved.as_str()))
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let client = open_client_for_key(&resolved).await?;
         *guard = Some(client);
     }
 
@@ -215,9 +303,7 @@ where
     // On transport errors: evict, reopen, retry once.
     if is_transport_error(&first_err) {
         *guard = None;
-        let mut fresh = open_client(Some(resolved.as_str()))
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let mut fresh = open_client_for_key(&resolved).await?;
         let result = op(&mut fresh).await;
         match result {
             Ok(v) => {
@@ -266,10 +352,17 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
         .collect())
 }
 
+/// On-demand BLE scan (~3 s). Best-effort: returns an empty list if there is no
+/// Bluetooth adapter or nothing is found. Kept separate from the USB device
+/// poll so the live list isn't slowed by a BLE scan on every tick.
+pub async fn api_scan_ble() -> Result<Vec<DeviceInfo>> {
+    Ok(find_ble_devices().await.into_iter().map(device_to_info).collect())
+}
+
 /// Queries the current status of a device. If `serial` is `None`, the
 /// first available device is used.
 pub async fn api_get_status(serial: Option<String>) -> Result<DeviceStatus> {
-    with_client(serial, async |c| c.get_status().await).await.map(Into::into)
+    with_client(serial, async |c| status_with_rssi(c).await).await
 }
 
 /// Transition the device from STANDALONE to REMOTE mode. Returns session id.
@@ -530,8 +623,8 @@ pub async fn api_device_status_stream_start(
     tokio::spawn(async move {
         log::trace!("frb_diag: device_status task started serial={}", serial);
         // Immediate first tick.
-        if let Ok(s) = with_client(Some(serial.clone()), async |c| c.get_status().await).await {
-            if sink.add(Into::<DeviceStatus>::into(s)).is_err() {
+        if let Ok(s) = with_client(Some(serial.clone()), async |c| status_with_rssi(c).await).await {
+            if sink.add(s).is_err() {
                 log::trace!(
                     "frb_diag: device_status task exiting serial={} reason=sink_closed_on_initial",
                     serial
@@ -551,9 +644,9 @@ pub async fn api_device_status_stream_start(
                     );
                 }
             }
-            match with_client(Some(serial.clone()), async |c| c.get_status().await).await {
+            match with_client(Some(serial.clone()), async |c| status_with_rssi(c).await).await {
                 Ok(status) => {
-                    if sink.add(Into::<DeviceStatus>::into(status)).is_err() {
+                    if sink.add(status).is_err() {
                         log::trace!(
                             "frb_diag: device_status task exiting serial={} reason=sink_closed_on_tick",
                             serial
@@ -709,6 +802,13 @@ pub async fn api_flash_firmware(
 /// FRB-exposed `DeviceInfo`. Centralised here so both `api_list_devices_full`
 /// and `api_devices_stream_start` agree on the mapping.
 fn device_to_info(d: attentio::device::discovery::AttentioDevice) -> DeviceInfo {
+    // Record BLE devices so the control/open path can route their key (BD_ADDR)
+    // back to the BLE transport.
+    if matches!(d.transport, Transport::Ble) {
+        if let Some(addr) = d.ble_address.as_deref() {
+            register_ble(&d.serial, addr);
+        }
+    }
     DeviceInfo {
         serial: d.serial,
         name: d.product,
@@ -717,5 +817,11 @@ fn device_to_info(d: attentio::device::discovery::AttentioDevice) -> DeviceInfo 
         usb_location: d.usb_location,
         serial_port: d.cdc0.as_ref().map(|p| p.path.clone()),
         protocol_port: d.cdc1.as_ref().or(d.single_cdc.as_ref()).map(|p| p.path.clone()),
+        transport: match d.transport {
+            Transport::Usb => "USB".to_string(),
+            Transport::Ble => "BLE".to_string(),
+        },
+        ble_address: d.ble_address,
+        paired: d.paired,
     }
 }

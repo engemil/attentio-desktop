@@ -659,6 +659,18 @@ class _LiveStatusBlock extends StatelessWidget {
                   ),
                 ),
               ),
+              // BLE-only: live signal strength. `rssi` is null for USB devices
+              // (and until the adapter surfaces a reading), so the row is hidden.
+              if (s.rssi != null)
+                MapEntry(
+                  'Signal (RSSI)',
+                  Text(
+                    '${s.rssi} dBm',
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
             ];
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

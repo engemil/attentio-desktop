@@ -27,7 +27,16 @@ class OverviewPage extends ConsumerWidget {
       child: devicesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Text('Error: $err')),
-        data: (devices) => _OverviewBody(devices: devices),
+        data: (devices) {
+          // Merge in BLE-discovered devices when Bluetooth is enabled. USB
+          // and BLE devices carry distinct serials (USB chip serial vs BLE
+          // address), so they list independently.
+          final bleEnabled = ref.watch(bleEnabledProvider);
+          final ble = bleEnabled
+              ? ref.watch(bleScanProvider).devices
+              : const <DeviceInfo>[];
+          return _OverviewBody(devices: [...devices, ...ble]);
+        },
       ),
     );
   }
@@ -144,6 +153,8 @@ class _OverviewBody extends ConsumerWidget {
         Row(
           children: [
             Text('Devices', style: Theme.of(context).textTheme.titleLarge),
+            const Spacer(),
+            const _BleToggle(),
             const SizedBox(width: 8),
             _RefreshButton(),
           ],
@@ -235,15 +246,24 @@ class _OverviewDeviceTile extends ConsumerWidget {
         dfuState.serial == device.serial ? dfuState.progress : null;
 
     final isNormal = device.mode == 'Normal';
-    // Suppress live status and favorites polling while a flash is in progress
-    // to avoid spurious reconnect errors and colour swatch flickering.
-    final statusAsync = (isNormal && !isFlashing)
+    // Live status/favorites polling opens a connection to read the device. USB
+    // tiles always poll. A *paired* BLE device is safe to auto-connect (the bond
+    // already exists, so no fresh pairing prompt); an *unpaired* BLE device is
+    // left for the user to open explicitly, to avoid surprise pairing from the
+    // list. The Rust layer routes the serial (USB chip serial) or the BLE key
+    // (BD_ADDR) to the right transport. Suppressed during a flash to avoid
+    // spurious reconnect errors and colour swatch flickering.
+    final isUsb = device.transport == 'USB';
+    final isBle = device.transport == 'BLE';
+    final canPoll =
+        isNormal && !isFlashing && (isUsb || (isBle && device.paired == true));
+    final statusAsync = canPoll
         ? ref.watch(deviceStatusStreamProvider(device.serial))
         : const AsyncValue<DeviceStatus?>.data(null);
 
     final name = deviceDisplayName(device);
 
-    final favorites = (isNormal && !isFlashing)
+    final favorites = canPoll
         ? ref.watch(deviceFavoritePresetsProvider(device.serial))
         : <DevicePreset>[];
 
@@ -254,6 +274,11 @@ class _OverviewDeviceTile extends ConsumerWidget {
         children: [
           InkWell(
             onTap: () {
+              // The detail page resolves the device by serial; the Rust layer
+              // routes USB serials to the serial transport and BLE keys
+              // (BD_ADDR) to the BLE transport, so both open the same page.
+              // Opening a BLE device is the explicit "connect" action — the
+              // overview list intentionally does not auto-connect BLE tiles.
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => DeviceDetailPage(device: device),
@@ -437,6 +462,39 @@ class _DeviceTextColumn extends StatelessWidget {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+        const SizedBox(height: 2),
+        _TransportLine(device: device),
+      ],
+    );
+  }
+}
+
+/// Small icon + label showing whether a device was found over USB or BLE.
+/// For BLE it also reflects the pairing state when known.
+class _TransportLine extends StatelessWidget {
+  const _TransportLine({required this.device});
+
+  final DeviceInfo device;
+
+  @override
+  Widget build(BuildContext context) {
+    final isBle = device.transport == 'BLE';
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    var label = device.transport;
+    if (isBle && device.paired != null) {
+      label += device.paired! ? ' · Paired' : ' · Not paired';
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(isBle ? Icons.bluetooth : Icons.usb, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+        ),
       ],
     );
   }
@@ -680,6 +738,10 @@ class _RefreshButtonState extends ConsumerState<_RefreshButton> {
   void _startRefresh() {
     ref.read(deviceRefreshProvider.notifier).refresh();
     ref.invalidate(devicesStreamProvider);
+    // When Bluetooth is on, a discovery pass also re-scans BLE.
+    if (ref.read(bleEnabledProvider)) {
+      ref.read(bleScanProvider.notifier).scan();
+    }
     setState(() => _secondsLeft = 15);
     _uiTimer?.cancel();
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -717,8 +779,42 @@ class _RefreshButtonState extends ConsumerState<_RefreshButton> {
                 color: Theme.of(context).colorScheme.primary,
               ),
             )
-          : const Icon(Icons.refresh, size: 20),
-      label: Text(isActive ? 'Refreshing (${_secondsLeft}s)' : 'Refresh'),
+          : const Icon(Icons.search, size: 20),
+      label: Text(isActive ? 'Discovering (${_secondsLeft}s)' : 'Discover'),
+    );
+  }
+}
+
+/// Toggle that arms/disarms BLE discovery. It only prepares BLE — the actual
+/// scan happens when "Discover" is pressed (which finds USB + BLE together).
+/// Disarming drops any BLE devices already in the list.
+class _BleToggle extends ConsumerWidget {
+  const _BleToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(bleEnabledProvider);
+    final scanning = ref.watch(bleScanProvider.select((s) => s.scanning));
+    return FilterChip(
+      avatar: scanning
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              enabled ? Icons.bluetooth : Icons.bluetooth_disabled,
+              size: 18,
+            ),
+      label: const Text('Bluetooth'),
+      selected: enabled,
+      onSelected: (v) {
+        // Only arm/disarm BLE here; the Discover button runs the scan.
+        ref.read(bleEnabledProvider.notifier).set(v);
+        if (!v) {
+          ref.read(bleScanProvider.notifier).clear();
+        }
+      },
     );
   }
 }
