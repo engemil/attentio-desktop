@@ -14,6 +14,30 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-06-14)
+
+Fixed
+
+- **Reliable control when switching between a device's USB and BLE links** —
+  applying a preset (or any LED/power/settings action) over one transport and
+  then the other no longer fails with `device returned error 0x01: not active
+  controller`. Fixed in `attentio-cli` (transparent re-claim/takeover on
+  `AP_ERR_NOT_CONTROLLER`); the **`attentio-cli` submodule is bumped** to the
+  revision carrying it. No desktop Rust/Dart changes were needed — the existing
+  `api_set_rgb` / `api_set_brightness` / … paths inherit the fix.
+
+Changed
+
+- **Bluetooth control restyled as a labelled Switch** — the overview's
+  "Bluetooth" `FilterChip` is now an `Icon + "BLE" + Switch`
+  (`lib/ui/pages/overview_page.dart`, `_BleToggle`), reading clearly as a pure
+  on/off toggle. Behaviour is unchanged: it only arms BLE; the **Discover** button
+  still runs the actual USB+BLE scan when the toggle is on. Discover is polished
+  (radar icon, tonal button, disabled while a scan window is active), and scan
+  progress now lives solely on the button rather than on the toggle.
+
+---
+
 ## [Development] (2026-06-11)
 
 BLE connectivity. The desktop app can now discover, connect to, and control

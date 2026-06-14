@@ -768,8 +768,9 @@ class _RefreshButtonState extends ConsumerState<_RefreshButton> {
   @override
   Widget build(BuildContext context) {
     final isActive = _secondsLeft > 0;
-    return TextButton.icon(
-      onPressed: _startRefresh,
+    return FilledButton.tonalIcon(
+      // Disabled while a scan window is active so it can't be re-triggered.
+      onPressed: isActive ? null : _startRefresh,
       icon: isActive
           ? SizedBox(
               width: 16,
@@ -779,42 +780,57 @@ class _RefreshButtonState extends ConsumerState<_RefreshButton> {
                 color: Theme.of(context).colorScheme.primary,
               ),
             )
-          : const Icon(Icons.search, size: 20),
+          : const Icon(Icons.radar, size: 20),
       label: Text(isActive ? 'Discovering (${_secondsLeft}s)' : 'Discover'),
     );
   }
 }
 
-/// Toggle that arms/disarms BLE discovery. It only prepares BLE — the actual
-/// scan happens when "Discover" is pressed (which finds USB + BLE together).
-/// Disarming drops any BLE devices already in the list.
+/// Pure on/off toggle that arms/disarms BLE discovery. It only records whether
+/// BLE should be included — the actual scan happens when "Discover" is pressed
+/// (which finds USB + BLE together). Disarming drops any BLE devices already in
+/// the list. Scan progress is shown on the Discover button, not here.
 class _BleToggle extends ConsumerWidget {
   const _BleToggle();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(bleEnabledProvider);
-    final scanning = ref.watch(bleScanProvider.select((s) => s.scanning));
-    return FilterChip(
-      avatar: scanning
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              enabled ? Icons.bluetooth : Icons.bluetooth_disabled,
-              size: 18,
-            ),
-      label: const Text('Bluetooth'),
-      selected: enabled,
-      onSelected: (v) {
-        // Only arm/disarm BLE here; the Discover button runs the scan.
-        ref.read(bleEnabledProvider.notifier).set(v);
-        if (!v) {
-          ref.read(bleScanProvider.notifier).clear();
-        }
-      },
+    final scheme = Theme.of(context).colorScheme;
+    final activeColor = enabled ? scheme.primary : scheme.onSurfaceVariant;
+    void toggle(bool v) {
+      // Only arm/disarm BLE here; the Discover button runs the scan.
+      ref.read(bleEnabledProvider.notifier).set(v);
+      if (!v) {
+        ref.read(bleScanProvider.notifier).clear();
+      }
+    }
+
+    return Tooltip(
+      message: 'Include Bluetooth devices in Discover',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            enabled ? Icons.bluetooth : Icons.bluetooth_disabled,
+            size: 18,
+            color: activeColor,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'BLE',
+            style: Theme.of(context)
+                .textTheme
+                .labelLarge
+                ?.copyWith(color: activeColor),
+          ),
+          const SizedBox(width: 4),
+          Switch.adaptive(
+            value: enabled,
+            onChanged: toggle,
+          ),
+        ],
+      ),
     );
   }
 }
