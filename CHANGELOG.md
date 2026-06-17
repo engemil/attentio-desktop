@@ -25,6 +25,12 @@ Added
   `lib/ui/pages/device_detail_page.dart`) that removes the bond, disconnects, and
   returns to the overview. Backed by new FRB calls `api_ble_pair` / `api_ble_unpair`
   (`rust/src/api/device_api.rs`).
+- **BLE signal strength in the device list** — each BLE tile on the overview
+  now shows a signal-strength icon and the raw dBm value (e.g. `-63 dBm`) next
+  to the transport/paired line (`_TransportLine`, `lib/ui/pages/overview_page.dart`).
+  Value comes from the advertisement RSSI captured during the BLE scan; updates
+  on each Discover press. `DeviceInfo` gains `rssi: Option<i16>`
+  (`rust/src/api/device_api.rs`); FRB bindings regenerated.
 
 Changed
 

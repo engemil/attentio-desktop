@@ -95,6 +95,9 @@ pub struct DeviceInfo {
     pub ble_address: Option<String>,
     /// BLE pairing state (Linux/BlueZ only); `None` for USB or when unknown.
     pub paired: Option<bool>,
+    /// Advertisement RSSI (dBm) from the BLE scan; `None` for USB or when not
+    /// reported by the adapter.
+    pub rssi: Option<i16>,
 }
 
 /// A single key-value entry from metadata or settings.
@@ -851,5 +854,6 @@ fn device_to_info(d: attentio::device::discovery::AttentioDevice) -> DeviceInfo 
         },
         ble_address: d.ble_address,
         paired: d.paired,
+        rssi: d.rssi,
     }
 }

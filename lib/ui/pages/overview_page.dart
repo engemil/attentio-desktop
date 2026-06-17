@@ -481,11 +481,17 @@ class _DeviceTextColumn extends StatelessWidget {
 }
 
 /// Small icon + label showing whether a device was found over USB or BLE.
-/// For BLE it also reflects the pairing state when known.
+/// For BLE it also reflects the pairing state and advertisement RSSI when known.
 class _TransportLine extends StatelessWidget {
   const _TransportLine({required this.device});
 
   final DeviceInfo device;
+
+  static IconData _rssiIcon(int dBm) {
+    if (dBm >= -60) return Icons.signal_wifi_4_bar;
+    if (dBm >= -75) return Icons.network_wifi_3_bar;
+    return Icons.network_wifi_1_bar;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -506,6 +512,15 @@ class _TransportLine extends StatelessWidget {
           label,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
         ),
+        if (isBle && device.rssi != null) ...[
+          const SizedBox(width: 6),
+          Icon(_rssiIcon(device.rssi!.toInt()), size: 14, color: color),
+          const SizedBox(width: 2),
+          Text(
+            '${device.rssi} dBm',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ],
       ],
     );
   }
