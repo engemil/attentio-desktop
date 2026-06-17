@@ -189,6 +189,54 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
     }
   }
 
+  /// Unpair ("forget") a BLE device: confirm, remove the bond + disconnect via
+  /// the Rust layer, then return to the overview. We deliberately do NOT use
+  /// [_run] here — it kicks the status poll, which would reconnect/re-pair; and
+  /// on success the page is popped anyway. The overview does not auto-connect
+  /// unpaired BLE tiles, so the device stays "Not paired" once we're back.
+  Future<void> _unpair(String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unpair device'),
+        content: Text(
+          'Unpair "$name"? The Bluetooth bond will be removed and you will '
+          'need to pair again to reconnect.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    try {
+      await apiBleUnpair(serial: _serial);
+      if (!mounted) return;
+      // Refresh the overview's BLE list so the tile reflects "Not paired".
+      ref.read(bleScanProvider.notifier).scan();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unpaired "$name"')));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to unpair: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Watch the device stream so the page rebuilds when device info changes
@@ -296,6 +344,10 @@ class _DeviceDetailPageState extends ConsumerState<DeviceDetailPage> {
                     ).showSnackBar(SnackBar(content: Text('Ping: ${ms}ms')));
                   }
                 }, 'Ping OK'),
+                // BLE-only, Linux-only: bond removal is bluetoothctl-based.
+                onUnpair: (device.transport == 'BLE' && Platform.isLinux)
+                    ? () => _unpair(displayName)
+                    : null,
               ),
               const SizedBox(height: 16),
               _ControlsCard(
@@ -799,6 +851,7 @@ class _QuickActionsCard extends StatelessWidget {
     required this.onPowerOn,
     required this.onPowerOff,
     required this.onPing,
+    this.onUnpair,
   });
 
   final VoidCallback onClaim;
@@ -806,6 +859,11 @@ class _QuickActionsCard extends StatelessWidget {
   final VoidCallback onPowerOn;
   final VoidCallback onPowerOff;
   final VoidCallback onPing;
+
+  /// BLE-only: remove the Bluetooth bond ("Unpair"). Null for USB devices and on
+  /// platforms where bond management isn't supported, in which case no button is
+  /// shown.
+  final VoidCallback? onUnpair;
 
   @override
   Widget build(BuildContext context) {
@@ -841,6 +899,17 @@ class _QuickActionsCard extends StatelessWidget {
       icon: const Icon(Icons.network_ping),
       label: const Text('Ping'),
     );
+    final scheme = Theme.of(context).colorScheme;
+    final Widget? unpairBtn = onUnpair == null
+        ? null
+        : OutlinedButton.icon(
+            onPressed: onUnpair,
+            icon: Icon(Icons.bluetooth_disabled, color: scheme.error),
+            label: Text('Unpair', style: TextStyle(color: scheme.error)),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: scheme.error),
+            ),
+          );
 
     return Card(
       child: Padding(
@@ -871,7 +940,11 @@ class _QuickActionsCard extends StatelessWidget {
                         children: [powerOnBtn, powerOffBtn],
                       ),
                       const SizedBox(height: 12),
-                      Wrap(spacing: 12, runSpacing: 12, children: [pingBtn]),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [pingBtn, ?unpairBtn],
+                      ),
                     ],
                   );
                 }
@@ -882,6 +955,7 @@ class _QuickActionsCard extends StatelessWidget {
                   powerOnBtn,
                   powerOffBtn,
                   pingBtn,
+                  ?unpairBtn,
                 ];
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -1,5 +1,7 @@
 use anyhow::Result;
-use attentio::device::ble::{open as ble_open, BleSelector};
+use attentio::device::ble::{
+    open as ble_open, pair as ble_pair, unpair as ble_unpair, BleSelector,
+};
 use attentio::device::discovery::{
     find_ble_devices, find_devices, cache_remember, DeviceMode, Transport,
 };
@@ -357,6 +359,32 @@ pub async fn api_list_devices_full() -> Result<Vec<DeviceInfo>> {
 /// poll so the live list isn't slowed by a BLE scan on every tick.
 pub async fn api_scan_ble() -> Result<Vec<DeviceInfo>> {
     Ok(find_ble_devices().await.into_iter().map(device_to_info).collect())
+}
+
+/// Unpair ("forget") a BLE device: drop the cached client (which disconnects the
+/// link via `ConnGuard::Ble`) and remove the host bond. `serial` is the BLE
+/// device key (its BD_ADDR). Errors for a non-BLE key, and on non-Linux hosts
+/// where bonding is managed by the OS. Nudges the device list to fast-poll so the
+/// paired state refreshes promptly.
+pub async fn api_ble_unpair(serial: String) -> Result<()> {
+    let address =
+        ble_address_for(&serial).ok_or_else(|| anyhow::anyhow!("{serial} is not a BLE device"))?;
+    evict_client(&serial).await;
+    ble_unpair(&address).await.map_err(|e| anyhow::anyhow!(e))?;
+    api_devices_request_fast_refresh();
+    Ok(())
+}
+
+/// Pair ("bond") a BLE device explicitly. `serial` is the BLE device key (its
+/// BD_ADDR). The connect path no longer auto-pairs, so this is how a discovered
+/// but unpaired device becomes controllable. Bonds only — no AP session is
+/// opened. Nudges the device list to fast-poll so the paired state refreshes.
+pub async fn api_ble_pair(serial: String) -> Result<()> {
+    let address =
+        ble_address_for(&serial).ok_or_else(|| anyhow::anyhow!("{serial} is not a BLE device"))?;
+    ble_pair(&address).await.map_err(|e| anyhow::anyhow!(e))?;
+    api_devices_request_fast_refresh();
+    Ok(())
 }
 
 /// Queries the current status of a device. If `serial` is `None`, the

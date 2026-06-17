@@ -255,6 +255,10 @@ class _OverviewDeviceTile extends ConsumerWidget {
     // spurious reconnect errors and colour swatch flickering.
     final isUsb = device.transport == 'USB';
     final isBle = device.transport == 'BLE';
+    // An unpaired BLE device can't be opened/controlled (the connect path no
+    // longer auto-pairs), so the tile offers an explicit Pair action instead of
+    // opening the detail page.
+    final isBleUnpaired = isBle && device.paired != true;
     final canPoll =
         isNormal && !isFlashing && (isUsb || (isBle && device.paired == true));
     final statusAsync = canPoll
@@ -273,18 +277,22 @@ class _OverviewDeviceTile extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           InkWell(
-            onTap: () {
-              // The detail page resolves the device by serial; the Rust layer
-              // routes USB serials to the serial transport and BLE keys
-              // (BD_ADDR) to the BLE transport, so both open the same page.
-              // Opening a BLE device is the explicit "connect" action — the
-              // overview list intentionally does not auto-connect BLE tiles.
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => DeviceDetailPage(device: device),
-                ),
-              );
-            },
+            // Unpaired BLE tiles aren't openable (opening would error now that
+            // the connect path doesn't auto-pair) — use the Pair button instead.
+            onTap: isBleUnpaired
+                ? null
+                : () {
+                    // The detail page resolves the device by serial; the Rust
+                    // layer routes USB serials to the serial transport and BLE
+                    // keys (BD_ADDR) to the BLE transport, so both open the same
+                    // page. Opening a BLE device is the explicit "connect"
+                    // action — the overview list does not auto-connect tiles.
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => DeviceDetailPage(device: device),
+                      ),
+                    );
+                  },
             child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -421,7 +429,10 @@ class _OverviewDeviceTile extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.chevron_right),
+              if (isBleUnpaired)
+                _PairButton(serial: device.serial)
+              else
+                const Icon(Icons.chevron_right),
             ],
           ),
         ),
@@ -831,6 +842,58 @@ class _BleToggle extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Explicit "Pair" action shown on an unpaired BLE tile. Bonds the device (no
+/// AP session) via the Rust layer, then re-scans so the tile flips to paired.
+/// Shows a spinner while pairing (bluetoothctl pairing can take a few seconds).
+class _PairButton extends ConsumerStatefulWidget {
+  const _PairButton({required this.serial});
+
+  final String serial;
+
+  @override
+  ConsumerState<_PairButton> createState() => _PairButtonState();
+}
+
+class _PairButtonState extends ConsumerState<_PairButton> {
+  bool _busy = false;
+
+  Future<void> _pair() async {
+    setState(() => _busy = true);
+    try {
+      await apiBlePair(serial: widget.serial);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Paired'), duration: Duration(seconds: 1)),
+      );
+      // Refresh the BLE list so the tile reflects the new paired state.
+      ref.read(bleScanProvider.notifier).scan();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to pair: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      onPressed: _busy ? null : _pair,
+      icon: _busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.bluetooth, size: 18),
+      label: Text(_busy ? 'Pairing…' : 'Pair'),
     );
   }
 }

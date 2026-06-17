@@ -14,6 +14,29 @@ Note: Update `pubspec.yaml` when publishing a new version.
 
 ---
 
+## [Development] (2026-06-17)
+
+Added
+
+- **Pair / Unpair BLE devices from the UI** — unpaired BLE tiles on the overview
+  now show a **Pair** button (`_PairButton`, `lib/ui/pages/overview_page.dart`)
+  that bonds the device (no AP session), and the device detail page's **Controls**
+  card gains an **Unpair** button (BLE + Linux only,
+  `lib/ui/pages/device_detail_page.dart`) that removes the bond, disconnects, and
+  returns to the overview. Backed by new FRB calls `api_ble_pair` / `api_ble_unpair`
+  (`rust/src/api/device_api.rs`).
+
+Changed
+
+- **BLE pairing is now explicit** — tapping a discovered AttentioLight-1 used to
+  silently bond it. Unpaired BLE tiles are still discovered and listed, but no
+  longer open on tap or auto-pair; use the **Pair** button. Backed by the
+  `attentio-cli` change that stops auto-pairing on connect.
+- **`attentio-cli` submodule bumped** to the revision with explicit BLE pairing
+  (no auto-pair on connect) plus the `ble pair|unpair` commands.
+
+---
+
 ## [Development] (2026-06-14)
 
 Fixed
