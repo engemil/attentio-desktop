@@ -18,6 +18,7 @@ Attentio Desktop is a graphical user interface (GUI) for managing Attentio devic
 - [Testing](#testing)
 - [Logging & Diagnostics](#logging--diagnostics)
 - [Building for Release](#building-for-release)
+- [Installing on Linux](#installing-on-linux)
 - [License](#license)
 
 
@@ -264,6 +265,42 @@ Windows:
 flutter build windows
 ```
 Output: `build\windows\x64\runner\Release\attentio_desktop.exe` (plus accompanying DLLs and `data/` folder — ship the whole `Release/` directory).
+
+## Installing on Linux
+
+After `flutter build linux`, install the bundle and wire it up:
+
+**Copy the bundle:**
+```bash
+sudo cp -r build/linux/x64/release/bundle /opt/attentio-desktop
+sudo ln -sf /opt/attentio-desktop/attentio_desktop /usr/local/bin/attentio-desktop
+```
+
+**USB permissions (udev rules):**
+```bash
+sudo bash attentio-cli/scripts/udev_rules_attentio.sh
+```
+
+**App icon:**
+```bash
+for size in 16x16 32x32 48x48 64x64 128x128 256x256 512x512; do
+  mkdir -p ~/.local/share/icons/hicolor/$size/apps
+  cp linux/hicolor/$size/apps/com.example.attentio_desktop.png \
+     ~/.local/share/icons/hicolor/$size/apps/
+done
+gtk-update-icon-cache ~/.local/share/icons/hicolor/ 2>/dev/null || true
+```
+
+**App launcher entry:**
+```bash
+cp linux/com.example.attentio_desktop.desktop \
+   ~/.local/share/applications/attentio-desktop.desktop
+sed -i 's|^Exec=.*|Exec=/opt/attentio-desktop/attentio_desktop|' \
+   ~/.local/share/applications/attentio-desktop.desktop
+update-desktop-database ~/.local/share/applications/
+```
+
+The app will now appear in the application menu and can be launched with `attentio-desktop` from a terminal.
 
 ## License
 
